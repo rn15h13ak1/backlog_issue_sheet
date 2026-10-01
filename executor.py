@@ -35,7 +35,7 @@ class Result:
     row_no: int
     outcome: str
     issue_key: str = ""
-    summary: str = ""
+    summary: str = ""              # 更新できた行は更新後の件名、それ以外は Backlog の今の件名
     message: str = ""
     issue: dict | None = None      # 作成・更新後の課題（結果の Excel に使う）
 
@@ -190,7 +190,9 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
             if e.fatal:
                 aborted = "認証・権限のエラーで中止したため"
             continue
-        emit(Result(UPDATE_SHEET, up.row_no, UPDATED, up.issue_key, up.summary, issue=issue))
+        # 件名を変えた行は、ログを見る人が変更後の課題を探せるよう、更新後の件名を残す
+        summary = (issue or {}).get("summary") or up.summary
+        emit(Result(UPDATE_SHEET, up.row_no, UPDATED, up.issue_key, summary, issue=issue))
 
     return results
 

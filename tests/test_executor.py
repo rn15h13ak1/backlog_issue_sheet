@@ -143,6 +143,35 @@ class TestRunLog:
         assert rows[0] == RunLog.HEADERS
         assert rows[1][:4] == ["登録", "2", CREATED, "DEMO-1"]
 
+    def test_件名を変えた行は更新後の件名を残す(self, plan_of, fake, tmp_path):
+        """変更前の件名だと、ログだけを見る人には変更後の課題と区別がつかない。"""
+        fake.add("旧い件名")
+        fake.add("そのまま")
+        plan = plan_of({"更新": (["課題キー", "件名", "担当者"], [
+            ["DEMO-1", "新しい件名", None],
+            ["DEMO-2", None, "山田太郎"],
+        ])})
+        path = tmp_path / "run.csv"
+        with RunLog(path) as log:
+            results = run(plan, fake, log=log)
+        assert [r.summary for r in results] == ["新しい件名", "そのまま"]
+        rows = list(csv.reader(path.open(encoding="utf-8-sig")))
+        assert [r[4] for r in rows[1:]] == ["新しい件名", "そのまま"]
+
+    def test_更新に失敗した行は今の件名を残す(self, plan_of, fake):
+        """送っていない件名を書くと、反映されたように読めてしまう。"""
+        from backlog_client import BacklogAPIError
+
+        fake.add("旧い件名")
+        plan = plan_of({"更新": (["課題キー", "件名"], [["DEMO-1", "新しい件名"]])})
+
+        def failing(key, params):
+            raise BacklogAPIError("更新できません", status=400)
+
+        fake.update_issue = failing
+        results = run(plan, fake)
+        assert (results[0].outcome, results[0].summary) == (FAILED, "旧い件名")
+
     def test_エラーのある計画は実行しない(self, plan_of, fake):
         plan = plan_of({"登録": (REG, [[None, "○", "a", "タスク", "中"]])})
         with pytest.raises(ValueError):
