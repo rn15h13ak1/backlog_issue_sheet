@@ -401,8 +401,7 @@ def cmd_import(args) -> int:
         print(f"\nドライランです（送信予定 {n_actions} 件）。Backlog に反映するには{how}。")
         return EXIT_OK
 
-    limit_note = f"（--limit {args.limit} のため先頭 {min(args.limit, n_actions)} 件）" if args.limit else ""
-    if not ask(f"\nBacklog に反映しますか？ 送信 {n_actions} 件{limit_note} [y/N]: ", args.yes):
+    if not ask(f"\nBacklog に反映しますか？ 送信 {n_actions} 件 [y/N]: ", args.yes):
         print("中止しました。")
         return EXIT_OK
 
@@ -411,7 +410,7 @@ def cmd_import(args) -> int:
     log_path = out_dir / f"run_{ts}.csv"
     print()
     with executor.RunLog(log_path) as log:
-        results = executor.execute(plan, master.project_id, client, limit=args.limit, log=log)
+        results = executor.execute(plan, master.project_id, client, log=log)
 
     counts: dict[str, int] = {}
     for r in results:
@@ -483,7 +482,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--execute", action="store_true", help="実際に送信する")
     p.add_argument("--yes", action="store_true", help="確認を省く（--execute と一緒に使う）")
-    p.add_argument("--limit", type=int, help="先頭から N 件だけ送信する（試しに少しだけ反映するとき）")
     p.add_argument(
         "--allow-duplicates", action="store_true",
         help="同じ親の下に同じ件名の未完了の課題があっても作る（同じ件名で意図して作るとき）",
@@ -509,9 +507,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if getattr(args, "limit", None) is not None and args.limit < 1:
-        print("--limit には 1 以上を指定してください", file=sys.stderr)
-        return EXIT_USAGE
     try:
         return args.func(args)
     except (ConfigError, SheetError, ExportError) as e:

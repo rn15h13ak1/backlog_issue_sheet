@@ -169,9 +169,12 @@ class TestImport:
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
         assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_FAILED
 
-    def test_limit_は1以上(self, env, make_book):
+    def test_件数の指定は受け付けない(self, env, make_book):
+        """一部だけ送ると続きの扱いが複雑になり、混乱を招くため、--limit はなくした。"""
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book), "--sheet", "登録", "--limit", "0"]) == cli.EXIT_USAGE
+        with pytest.raises(SystemExit) as e:
+            cli.main(["import", str(book), "--sheet", "登録", "--limit", "1"])
+        assert e.value.code == 2
 
     def test_別のプロジェクト向けのブックは送らずに終了コード1(self, env, fake, make_book, capsys):
         book = make_book({

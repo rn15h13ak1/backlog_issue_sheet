@@ -73,11 +73,6 @@ class TestCreate:
         assert outcomes(results) == [(2, FAILED), (3, NOT_RUN)]
         assert len(fake.calls) == 1
 
-    def test_limit(self, plan_of, fake):
-        plan = plan_of({"登録": (REG, [[None, None, s, "タスク", "中"] for s in "abc"])})
-        results = run(plan, fake, limit=2)
-        assert outcomes(results) == [(2, CREATED), (3, CREATED), (4, NOT_RUN)]
-
 
 class TestUpdate:
     def test_差分だけを送る(self, plan_of, fake):

@@ -105,17 +105,16 @@ def ordered_updates(plan: Plan) -> list[UpdatePlan]:
 
 
 def count_actions(plan: Plan) -> int:
-    """送信が発生する行の数（--limit の対象）。"""
+    """送信が発生する行の数。"""
     return len(plan.creates) + sum(1 for u in plan.updates if u.has_changes)
 
 
-def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, log: RunLog | None = None) -> list[Result]:
+def execute(plan: Plan, project_id: int, client, *, log: RunLog | None = None) -> list[Result]:
     if not plan.ok:
         raise ValueError("エラーのある計画は実行できません")
     log = log or RunLog(None)
     results: list[Result] = []
     created: dict[int, dict] = {}      # 登録シートの行番号 → 作成した課題
-    budget = limit if limit is not None else float("inf")
     aborted: str | None = None
 
     def emit(r: Result) -> None:
@@ -131,9 +130,6 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
         if aborted:
             emit(Result(REGISTER_SHEET, cp.row_no, NOT_RUN, summary=cp.summary, message=aborted))
             continue
-        if budget <= 0:
-            emit(Result(REGISTER_SHEET, cp.row_no, NOT_RUN, summary=cp.summary, message="--limit に達したため"))
-            continue
 
         parent_id = cp.parent_issue_id
         if cp.parent_row is not None:
@@ -146,7 +142,6 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
                 continue
             parent_id = parent["id"]
 
-        budget -= 1
         try:
             issue = client.create_issue(create_params(cp, project_id, parent_id))
         except BacklogAPIError as e:
@@ -180,10 +175,6 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
         if aborted:
             emit(Result(UPDATE_SHEET, up.row_no, NOT_RUN, up.issue_key, up.summary, message=aborted))
             continue
-        if budget <= 0:
-            emit(Result(UPDATE_SHEET, up.row_no, NOT_RUN, up.issue_key, up.summary, message="--limit に達したため"))
-            continue
-        budget -= 1
         try:
             issue = client.update_issue(up.issue_key, update_params(up))
         except BacklogNoChangeError:

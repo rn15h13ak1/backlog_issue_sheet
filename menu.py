@@ -70,9 +70,8 @@ def clean_path(text: str) -> str:
     return text.replace("\\ ", " ") if sys.platform != "win32" else text
 
 
-def input_text(prompt: str, default: str = "", empty: str = "戻る") -> str | None:
-    """empty は、既定値が無いときに空 Enter が何を意味するかの案内。"""
-    suffix = f" [Enter={default}]" if default else f"（空 Enter で{empty}）"
+def input_text(prompt: str, default: str = "") -> str | None:
+    suffix = f" [Enter={default}]" if default else "（空 Enter で戻る）"
     answer = input(f"  {prompt}{suffix}: ").strip()
     if not answer:
         return default or None
@@ -132,12 +131,6 @@ def build_args(action: str, config: str | None, history: dict) -> list[str] | No
         args = ["import", excel, "--sheet", sheet, *common, "--from-menu"]
         if execute:
             args.append("--execute")
-            limit = input_text("先頭から何件だけ送るか", empty="全件")
-            if limit:
-                if not limit.isdigit() or int(limit) < 1:
-                    print("  ※ 1 以上の数を入力してください。")
-                    return None
-                args += ["--limit", limit]
         return args
     if action == "export":
         choice = print_menu("書き出す範囲", [
