@@ -128,10 +128,8 @@ def build_args(action: str, config: str | None, history: dict) -> list[str] | No
         excel = ask_excel(history)
         if excel is None:
             return None
-        args = ["import", excel, "--sheet", sheet, *common]
-        if not execute:
-            # 「--execute を付けて」の案内を、メニューの操作に置き換えてもらう
-            args.append("--from-menu")
+        # 「--execute を付けて」などの案内を、メニューの操作に置き換えてもらう
+        args = ["import", excel, "--sheet", sheet, *common, "--from-menu"]
         if execute:
             args.append("--execute")
             limit = input_text("先頭から何件だけ送るか", empty="全件")

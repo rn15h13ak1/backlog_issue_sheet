@@ -23,7 +23,7 @@ def test_実行は_execute_を付け_件数も渡せる(monkeypatch, tmp_path):
     book.write_bytes(b"")
     feed(monkeypatch, [f'"{book}"', "3"])
     assert menu.build_args("register_execute", None, {}) == [
-        "import", str(book), "--sheet", "登録", "--execute", "--limit", "3",
+        "import", str(book), "--sheet", "登録", "--from-menu", "--execute", "--limit", "3",
     ]
 
 
@@ -82,9 +82,9 @@ def test_登録と更新は最初のメニューで選び分ける(monkeypatch, 
     book.write_bytes(b"")
     expected = {
         "register_dry": ["--sheet", "登録", "--from-menu"],
-        "register_execute": ["--sheet", "登録", "--execute"],
+        "register_execute": ["--sheet", "登録", "--from-menu", "--execute"],
         "update_dry": ["--sheet", "更新", "--from-menu"],
-        "update_execute": ["--sheet", "更新", "--execute"],
+        "update_execute": ["--sheet", "更新", "--from-menu", "--execute"],
     }
     for action, tail in expected.items():
         feed(monkeypatch, [str(book), ""])

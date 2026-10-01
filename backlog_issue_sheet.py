@@ -322,10 +322,13 @@ def cmd_import(args) -> int:
     for note in notes:
         print(note)
     print("Backlog の現在の状態と照らし合わせています…")
-    plan = build_plan(sheets, master, client)
+    plan = build_plan(sheets, master, client, allow_duplicates=args.allow_duplicates)
 
     print_plan(plan, master)
     print_problems(plan)
+    if plan.duplicate_rows:
+        how = "コマンドで --allow-duplicates を付けて" if args.from_menu else "--allow-duplicates を付けて"
+        print(f"\n  同じ件名で意図して作るときは、{how}実行してください。")
     if not plan.ok:
         return EXIT_FAILED
 
@@ -417,6 +420,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true", help="実際に送信する")
     p.add_argument("--yes", action="store_true", help="確認を省く（--execute と一緒に使う）")
     p.add_argument("--limit", type=int, help="先頭から N 件だけ送信する（試しに少しだけ反映するとき）")
+    p.add_argument(
+        "--allow-duplicates", action="store_true",
+        help="同じ親の下に同じ件名の未完了の課題があっても作る（同じ件名で意図して作るとき）",
+    )
     # メニューから呼ばれたとき、案内をメニューの操作で示す。利用者が打つものではないため隠す
     p.add_argument("--from-menu", action="store_true", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_import)

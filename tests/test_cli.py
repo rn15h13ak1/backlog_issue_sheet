@@ -177,6 +177,28 @@ class TestSelectSheet:
         assert e.value.code == 2
         assert "--sheet" in capsys.readouterr().err
 
+
+class TestDuplicates:
+    def test_同じ登録シートを2回実行しても二重には作らない(self, env, fake, make_book, capsys):
+        book = make_book({"登録": (REG, [
+            [None, None, "親", "タスク", "中"],
+            [None, "○", "子", "タスク", "中"],
+        ])})
+        args = ["import", str(book), "--sheet", "登録", "--execute", "--yes"]
+        assert cli.main(args) == cli.EXIT_OK
+        capsys.readouterr()
+        assert cli.main(args) == cli.EXIT_FAILED
+        assert len(fake.calls) == 2              # 1 回目の 2 件だけ
+        out = capsys.readouterr().out
+        assert "同じ件名の未完了の課題があります（DEMO-1）" in out
+        assert "--allow-duplicates を付けて実行してください" in out
+
+    def test_メニューからはコマンドで付けるよう案内する(self, env, fake, make_book, capsys):
+        fake.add("a")
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--sheet", "登録", "--from-menu"]) == cli.EXIT_FAILED
+        assert "コマンドで --allow-duplicates を付けて実行してください" in capsys.readouterr().out
+
 class TestOtherCommands:
     def test_template(self, env):
         assert cli.main(["template", "-o", "t.xlsx"]) == cli.EXIT_OK
@@ -274,7 +296,9 @@ class TestOutputNames:
     def test_同じ秒に2回取り込んでも実行ログが両方残る(self, env, fake, make_book, same_second):
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
         assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_OK
-        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_OK
+        # 同じ件名の課題ができているので、2 回目は止められる。ここではファイル名だけを見る
+        args = ["import", str(book), "--sheet", "登録", "--execute", "--yes", "--allow-duplicates"]
+        assert cli.main(args) == cli.EXIT_OK
         names = sorted(f.name for f in (env / "output").iterdir())
         assert names == [
             "run_20261001_120000.csv", "run_20261001_120000_2.csv",

@@ -3,7 +3,7 @@
 ==============================
 Excel から読んだ行を検証し、「何を作り、何をどう変えるか」を決める。
 ここでは Backlog に書き込まない。読むのは、渡された client の
-get_issue / get_child_issues だけ（テストでは偽物に差し替える）。
+get_issue / get_child_issues / get_issues だけ（テストでは偽物に差し替える）。
 
 エラーが 1 件でもあれば、実行側は何も送らない。全件のエラーを一度に
 示すため、途中で止めずに最後まで検証する。
@@ -32,9 +32,10 @@ from fields import (
     column_for_header,
     current_value,
     is_blank,
+    normalize_text,
     parse_value,
 )
-from master import STATUS_OPEN_ID, Master, suggest
+from master import STATUS_CLOSED_ID, STATUS_OPEN_ID, Master, suggest
 from sheet_io import PROJECT_LABEL, PROJECT_SHEET, SheetData
 
 
@@ -107,6 +108,7 @@ class Plan:
     updates: list[UpdatePlan] = field(default_factory=list)
     problems: list[Problem] = field(default_factory=list)
     warnings: list[Problem] = field(default_factory=list)
+    duplicate_rows: list[int] = field(default_factory=list)   # 同じ件名の課題が既にある登録シートの行
 
     @property
     def ok(self) -> bool:
@@ -572,12 +574,53 @@ def check_project(project_key: str | None, master: Master, plan: Plan) -> None:
         ))
 
 
-def build_plan(sheets: dict[str, SheetData], master: Master, client) -> Plan:
+def check_duplicates(plan: Plan, master: Master, client) -> None:
+    """
+    作ろうとしている課題と同じ件名の、未完了の課題が Backlog にあればエラーにする。
+
+    元の Excel には課題キーを書き戻さないため、同じ登録シートをもう一度実行すると
+    二重に作られる。実行した人や場所によらず気づけるよう、Backlog 側を見る。
+
+    比べるのは同じ親の下（親の無い行は、親の無い課題）どうし。「レビュー」のように
+    別々の親の下に同じ件名の子を作るのはよくあるため。同じシートの行を親にする
+    行は比べない（親が新しく作られるので、その下に既存の課題は無い）。
+    完了した課題は比べない（同じ件名の課題を定期的に作り直す使い方があるため）。
+    """
+    targets = [
+        cp for cp in plan.creates
+        if cp.parent_row is None and not (cp.parent_key and cp.parent_issue_id is None)
+    ]
+    if not targets:
+        return
+    open_ids = [item["id"] for item in master.table("statuses").items if item["id"] != STATUS_CLOSED_ID]
+    existing: dict[tuple, list[str]] = {}
+    for issue in client.get_issues(master.project_id, {"statusId": open_ids}):
+        key = (issue.get("parentIssueId"), normalize_text(issue.get("summary") or ""))
+        existing.setdefault(key, []).append(issue["issueKey"])
+
+    for cp in targets:
+        keys = existing.get((cp.parent_issue_id, normalize_text(cp.summary)))
+        if not keys:
+            continue
+        where = f"{cp.parent_key} の子課題に" if cp.parent_key else ""
+        plan.problems.append(Problem(
+            REGISTER_SHEET, cp.row_no, "件名",
+            f"{where}同じ件名の未完了の課題があります（{' / '.join(keys)}）。"
+            "二重に登録しないよう、送りません",
+        ))
+        plan.duplicate_rows.append(cp.row_no)
+
+
+def build_plan(
+    sheets: dict[str, SheetData], master: Master, client, *, allow_duplicates: bool = False,
+) -> Plan:
     plan = Plan()
     check_project(getattr(sheets, "project_key", None), master, plan)
     issues = IssueCache(client, master.project_id)
     if REGISTER_SHEET in sheets:
         plan_register(sheets[REGISTER_SHEET], master, issues, plan)
+        if not allow_duplicates:
+            check_duplicates(plan, master, client)
     if UPDATE_SHEET in sheets:
         plan_update(sheets[UPDATE_SHEET], master, issues, plan)
     return plan
