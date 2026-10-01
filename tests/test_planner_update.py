@@ -2,6 +2,7 @@
 
 import pytest
 
+import executor
 from fields import CLEAR
 
 
@@ -57,6 +58,43 @@ class TestDiff:
         fake.add("x", issueTypeId=2)
         plan = plan_of(upd([["DEMO-1", "タスク", "値"]], ["課題キー", "種別", "バグ専用"]))
         assert any("種別「タスク」では使えません" in m for m in messages(plan))
+
+
+class TestDescription:
+    """詳細（本文）。複数行で、Excel と Backlog で改行コードが違いうる。"""
+
+    def sent(self, plan, fake, master):
+        executor.execute(plan, master.project_id, fake)
+        return [c for c in fake.calls if c[0] == "update"]
+
+    def test_書き換えると詳細だけを送る(self, plan_of, fake, master):
+        fake.add("x", description="元の本文")
+        plan = plan_of(upd([["DEMO-1", "新しい本文\n2行目"]], ["課題キー", "詳細"]))
+        assert plan.ok
+        assert self.sent(plan, fake, master) == [("update", "DEMO-1", {"description": "新しい本文\n2行目"})]
+        assert fake.get_issue("DEMO-1")["description"] == "新しい本文\n2行目"
+
+    def test_削除で本文を空にする(self, plan_of, fake, master):
+        fake.add("x", description="消す本文")
+        plan = plan_of(upd([["DEMO-1", "(削除)"]], ["課題キー", "詳細"]))
+        assert plan.ok
+        assert self.sent(plan, fake, master) == [("update", "DEMO-1", {"description": ""})]
+        assert fake.get_issue("DEMO-1")["description"] == ""
+
+    def test_空のセルは本文を変えない(self, plan_of, fake):
+        fake.add("x", description="元の本文")
+        plan = plan_of(upd([["DEMO-1", None, "新しい件名"]], ["課題キー", "詳細", "件名"]))
+        assert [c.column.header for c in plan.updates[0].changes] == ["件名"]
+
+    def test_改行コードだけの違いは変更なし(self, plan_of, fake):
+        """
+        Backlog の本文は \r\n を含みうるが、Excel から読むと \n になる（openpyxl が
+        XML の改行をそろえる）。違いとみなすと、書き出して戻すたびに本文を送ってしまう。
+        """
+        fake.add("x", description="1行目\r\n2行目")
+        plan = plan_of(upd([["DEMO-1", "1行目\n2行目"]], ["課題キー", "詳細"]))
+        assert plan.ok
+        assert plan.updates[0].changes == []
 
 
 class TestKeys:
