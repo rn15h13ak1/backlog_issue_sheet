@@ -113,6 +113,15 @@ class TestImport:
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
         assert cli.main(["import", str(book), "--limit", "0"]) == cli.EXIT_USAGE
 
+    def test_別のプロジェクト向けのブックは送らずに終了コード1(self, env, fake, make_book, capsys):
+        book = make_book({
+            "登録": (REG, [[None, None, "a", "タスク", "中"]]),
+            "プロジェクト": (["プロジェクトキー", "OTHER"], []),
+        })
+        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_FAILED
+        assert fake.calls == []
+        assert "OTHER 向け" in capsys.readouterr().out
+
 
 class TestOtherCommands:
     def test_template(self, env):

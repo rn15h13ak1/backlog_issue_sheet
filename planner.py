@@ -35,7 +35,7 @@ from fields import (
     parse_value,
 )
 from master import STATUS_OPEN_ID, Master, suggest
-from sheet_io import SheetData
+from sheet_io import PROJECT_LABEL, PROJECT_SHEET, SheetData
 
 
 @dataclass
@@ -545,8 +545,36 @@ def _check_final_hierarchy(
 # 入口
 # ---------------------------------------------------------------------------
 
+def check_project(project_key: str | None, master: Master, plan: Plan) -> None:
+    """
+    ブックに書かれたプロジェクトキーと、設定の接続先を照らし合わせる。
+
+    課題キーを 1 つも書かない「登録」シートは、ほかに接続先の誤りに気づく手がかりが無い。
+    種別・優先度の名前は既定のままのプロジェクトが多く、別のプロジェクトでも通ってしまう。
+    シートが無いブック（自分で作ったものなど）も取り込めるよう、書かれていなければ注意にとどめる。
+    """
+    expected = master.project_key
+    if project_key is None:
+        plan.warnings.append(Problem(
+            PROJECT_SHEET, None, None,
+            f"シートが無いため、どのプロジェクト向けのブックか確かめられません（接続先は {expected}）",
+        ))
+    elif not project_key:
+        plan.warnings.append(Problem(
+            PROJECT_SHEET, None, PROJECT_LABEL,
+            f"空のため、どのプロジェクト向けのブックか確かめられません（接続先は {expected}）",
+        ))
+    elif project_key.upper() != expected.upper():
+        plan.problems.append(Problem(
+            PROJECT_SHEET, None, PROJECT_LABEL,
+            f"このブックは {project_key} 向けですが、設定の接続先は {expected} です。"
+            "設定ファイルか、ブックの指定を確かめてください",
+        ))
+
+
 def build_plan(sheets: dict[str, SheetData], master: Master, client) -> Plan:
     plan = Plan()
+    check_project(getattr(sheets, "project_key", None), master, plan)
     issues = IssueCache(client, master.project_id)
     if REGISTER_SHEET in sheets:
         plan_register(sheets[REGISTER_SHEET], master, issues, plan)

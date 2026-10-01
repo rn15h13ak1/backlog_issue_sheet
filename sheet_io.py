@@ -1,7 +1,8 @@
 """
 Excel の読み書き
 ================
-読み込みは「登録」「更新」の 2 シートだけを見る。ほかのシートは無視する。
+読み込みは「登録」「更新」の 2 シートと、どのプロジェクト向けかを書く
+「プロジェクト」シートを見る。ほかのシートは無視する。
 
 書き込みはひな形・書き出し・実行結果の 3 つで共通に使う。どれも
 「更新」シートの書式で出すため、そのまま取り込みに戻せる。
@@ -36,6 +37,9 @@ from master import Master
 
 MASTER_SHEET = "_マスタ"
 GUIDE_SHEET = "使い方"
+PROJECT_SHEET = "プロジェクト"
+PROJECT_LABEL = "プロジェクトキー"
+PROJECT_NOTE = "取り込むとき、設定ファイルの project_key と照らし合わせます。違えば何も送りません。"
 # 入力規則（プルダウン）を付ける行数
 VALIDATION_ROWS = 1000
 
@@ -57,8 +61,20 @@ class SheetData:
     rows: list[SheetRow] = field(default_factory=list)
 
 
-def read_workbook(path: str | Path) -> dict[str, SheetData]:
-    """「登録」「更新」シートを読む。どちらも無ければ SheetError。"""
+class Book(dict):
+    """
+    {シート名: SheetData}。読み込んだブックに書かれたプロジェクトキーも持つ。
+
+    project_key は「プロジェクト」シートが無ければ None、あっても値が空なら ""。
+    """
+
+    def __init__(self, *args, project_key: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.project_key = project_key
+
+
+def read_workbook(path: str | Path) -> Book:
+    """「登録」「更新」シートとプロジェクトキーを読む。どちらのシートも無ければ SheetError。"""
     path = Path(path)
     if not path.is_file():
         raise SheetError(f"ファイルが見つかりません: {path}")
@@ -74,10 +90,12 @@ def read_workbook(path: str | Path) -> dict[str, SheetData]:
 
     try:
         sheetnames = list(wb.sheetnames)
-        result = {}
+        result = Book()
         for name in (REGISTER_SHEET, UPDATE_SHEET):
             if name in sheetnames:
                 result[name] = _read_sheet(wb[name], name)
+        if PROJECT_SHEET in sheetnames:
+            result.project_key = _read_project_key(wb[PROJECT_SHEET])
     finally:
         wb.close()
 
@@ -87,6 +105,15 @@ def read_workbook(path: str | Path) -> dict[str, SheetData]:
             f"（シート名: {' / '.join(sheetnames)}）"
         )
     return result
+
+
+def _read_project_key(ws) -> str:
+    """A 列が「プロジェクトキー」の行の、B 列の値。その行が無ければ ""。"""
+    for row in ws.iter_rows(min_col=1, max_col=2, values_only=True):
+        label, value = (tuple(row) + (None, None))[:2]
+        if not is_blank(label) and str(label).strip() == PROJECT_LABEL:
+            return "" if is_blank(value) else str(value).strip()
+    return ""
 
 
 def _read_sheet(ws, name: str) -> SheetData:
@@ -221,6 +248,10 @@ GUIDE_LINES = [
     f"  ・{PARENT_HEADER}に課題キーを書くとその子課題に、{DETACH_TOKEN} と書くと"
     "子課題ではなくなります。",
     "",
+    f"■ 「{PROJECT_SHEET}」シート：どのプロジェクト向けのブックか",
+    f"  ・{PROJECT_LABEL}を書きます。取り込むとき、設定ファイルの project_key と違えば何も送りません。",
+    "  ・backlog-issue-sheet template で作ったひな形と、書き出したファイルには、はじめから入っています。",
+    "",
     "■ 共通",
     "  ・列は見出しの名前で読みます。要らない列は消して構いません。",
     "  ・見出しが # で始まる列は読み飛ばします（メモ用）。",
@@ -232,6 +263,17 @@ GUIDE_LINES = [
 
 
 EXAMPLE_NOTE_HEADER = "#説明"
+
+
+def _write_project_sheet(wb: Workbook, master: Master) -> None:
+    ws = wb.create_sheet(PROJECT_SHEET)
+    label = ws.cell(row=1, column=1, value=PROJECT_LABEL)
+    label.font = HEADER_FONT
+    label.fill = STRUCTURE_FILL
+    ws.cell(row=1, column=2, value=master.project_key or None)
+    ws.cell(row=3, column=1, value=PROJECT_NOTE)
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["B"].width = 16
 
 
 def write_workbook(path: str | Path, master: Master, **kwargs) -> Path:
@@ -277,6 +319,7 @@ def build_workbook(
         update_headers(master) + list(extra_update_headers or []),
         update_rows or [],
     ))
+    _write_project_sheet(wb, master)
     for name, (based_on, rows) in (examples or {}).items():
         base = register_headers(master) if based_on == REGISTER_SHEET else update_headers(master)
         sheets.append((wb.create_sheet(name), base + [EXAMPLE_NOTE_HEADER], rows))
