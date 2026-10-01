@@ -213,15 +213,18 @@ def map_headers(
 
 def _parse_row(
     sheet: SheetData, row, mapping, master: Master, problems: list[Problem]
-) -> tuple[dict[str, object], dict[str, Column], dict[str, object]]:
+) -> tuple[dict[str, object], dict[str, Column], dict[str, object], set[str]]:
     """
-    1 行を読む。返り値は ({列のキー: 値}, {列のキー: Column}, {構造の見出し: 生の値})。
+    1 行を読む。返り値は ({列のキー: 値}, {列のキー: Column}, {構造の見出し: 生の値},
+    {読めなかった列のキー})。
 
-    値が None（空のセル）の列は含めない。
+    値が None（空のセル）の列は含めない。読めなかった列（名前が見つからないなど）も
+    values に入らないが、空ではない。必須の確認で「空です」と重ねて出さないために分けて返す。
     """
     values: dict[str, object] = {}
     columns: dict[str, Column] = {}
     structure: dict[str, object] = {}
+    invalid: set[str] = set()
     for idx, target in mapping.items():
         raw = row.values.get(idx)
         if isinstance(target, str):
@@ -231,12 +234,13 @@ def _parse_row(
             value = parse_value(target, raw, master)
         except ValueProblem as e:
             problems.append(Problem(sheet.name, row.row_no, target.header, str(e)))
+            invalid.add(target.key)
             continue
         if value is None:
             continue
         values[target.key] = value
         columns[target.key] = target
-    return values, columns, structure
+    return values, columns, structure, invalid
 
 
 def _check_custom_applicability(
@@ -285,7 +289,7 @@ def plan_register(sheet: SheetData, master: Master, issues: IssueCache, plan: Pl
     uses_parent = False
 
     for i, row in enumerate(rows):
-        values, columns, structure = _parse_row(sheet, row, mapping, master, problems)
+        values, columns, structure, invalid = _parse_row(sheet, row, mapping, master, problems)
 
         for key, value in values.items():
             if value is CLEAR:
@@ -295,14 +299,18 @@ def plan_register(sheet: SheetData, master: Master, issues: IssueCache, plan: Pl
                 ))
 
         for required_key, header in (("summary", "件名"), ("issueTypeId", "種別"), ("priorityId", "優先度")):
-            if required_key not in values and any(h == header for _, h in sheet.headers):
+            # 読めなかった列（名前が見つからないなど）は空ではない。そのエラーは既に出ている
+            if required_key in values or required_key in invalid:
+                continue
+            if any(h == header for _, h in sheet.headers):
                 problems.append(Problem(sheet.name, row.row_no, header, "必須の項目が空です"))
 
         issue_type_id = values.get("issueTypeId")
         _check_custom_applicability(sheet, row.row_no, columns, values, issue_type_id, master, problems)
         if isinstance(issue_type_id, int):
             for cf in master.custom_fields:
-                if cf.required and cf.applies_to(issue_type_id) and f"customField_{cf.id}" not in values:
+                cf_key = f"customField_{cf.id}"
+                if cf.required and cf.applies_to(issue_type_id) and cf_key not in values and cf_key not in invalid:
                     problems.append(Problem(
                         sheet.name, row.row_no, cf.name,
                         "必須のカスタム属性が空です"
@@ -420,7 +428,7 @@ def plan_update(sheet: SheetData, master: Master, issues: IssueCache, plan: Plan
     planned: list[UpdatePlan] = []
 
     for row in sheet.rows:
-        values, columns, structure = _parse_row(sheet, row, mapping, master, problems)
+        values, columns, structure, _ = _parse_row(sheet, row, mapping, master, problems)
 
         key_raw = structure.get(KEY_HEADER)
         if is_blank(key_raw):

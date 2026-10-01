@@ -169,6 +169,39 @@ class TestValues:
         assert any("日付として読めません" in m for m in messages(plan))
 
 
+
+class TestNoDoubleReport:
+    """名前が見つからない列は、空ではない。「必須の項目が空です」を重ねて出さない。"""
+
+    def test_必須の列の名前が見つからなければ_そのエラーだけ(self, plan_of):
+        plan = plan_of(reg([[None, None, "a", "無い種別", "無い優先度"]]))
+        assert messages(plan) == [
+            "登録 2行目「種別」: 種別「無い種別」が見つかりません",
+            "登録 2行目「優先度」: 優先度「無い優先度」が見つかりません",
+        ]
+
+    def test_空なら必須のエラーは出る(self, plan_of):
+        plan = plan_of(reg([[None, None, "a", None, "中"]]))
+        assert messages(plan) == ["登録 2行目「種別」: 必須の項目が空です"]
+
+    def test_必須のカスタム属性も重ねて出さない(self, fake, make_book, monkeypatch):
+        import conftest
+        from master import Master
+        from planner import build_plan
+        from sheet_io import read_workbook
+
+        required = {"id": 306, "typeId": 5, "name": "必須区分", "required": True,
+                    "items": [{"id": 21, "name": "甲"}]}
+        monkeypatch.setattr(conftest, "CUSTOM_FIELDS", conftest.CUSTOM_FIELDS + [required])
+        master = Master.load(fake, "DEMO")
+
+        def problems(value):
+            book = make_book(reg([[None, None, "a", "タスク", "中", value]], H + ["必須区分"]))
+            return messages(build_plan(read_workbook(book), master, fake))
+
+        assert problems("乙") == ["登録 2行目「必須区分」: 「必須区分」の選択肢「乙」が見つかりません"]
+        assert problems(None) == ["登録 2行目「必須区分」: 必須のカスタム属性が空です"]
+
 class TestHeaders:
     def test_シャープで始まる列は読み飛ばす(self, plan_of):
         plan = plan_of(reg([[None, None, "A", "タスク", "中", "メモ"]], H + ["#備考"]))
