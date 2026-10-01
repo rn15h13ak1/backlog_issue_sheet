@@ -67,3 +67,15 @@ def test_件数の欄は空_Enter_が全件だと案内する(monkeypatch, tmp_p
 
 def test_ドライランの案内に使う表示名がメニューにある():
     assert cli.MENU_EXECUTE_LABEL in [label for key, label, _ in menu.ACTIONS if key == "execute"]
+
+
+def test_使い方シートが案内するメニューの項目はメニューにある():
+    """メニューの項目名を変えたのに使い方シートを直し忘れると、無い項目を案内してしまう。"""
+    import re
+
+    from sheet_io import GUIDE_LINES
+
+    referred = re.findall(r"メニューの「(.+?)」", "\n".join(GUIDE_LINES))
+    assert referred, "使い方シートがメニューの項目を案内していない"
+    labels = [label for _, label, _ in menu.ACTIONS]
+    assert [r for r in referred if r not in labels] == []

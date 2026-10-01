@@ -232,6 +232,8 @@ def _format_cells(ws, headers: list[str], columns: dict[str, Column], n_rows: in
                 cell.number_format = "yyyy-mm-dd"
 
 
+# メニュー（menu.py）の項目名で案内する。メニューから使う人はコマンド名を知らないため。
+# 名前がメニューとずれないことは tests/test_menu.py で確かめる
 GUIDE_LINES = [
     "このブックは backlog-issue-sheet で取り込める書式です。",
     "",
@@ -250,14 +252,18 @@ GUIDE_LINES = [
     "",
     f"■ 「{PROJECT_SHEET}」シート：どのプロジェクト向けのブックか",
     f"  ・{PROJECT_LABEL}を書きます。取り込むとき、設定ファイルの project_key と違えば何も送りません。",
-    "  ・backlog-issue-sheet template で作ったひな形と、書き出したファイルには、はじめから入っています。",
+    "  ・メニューの「ひな形を作る」（backlog-issue-sheet template）で作ったひな形と、"
+    "書き出したファイルには、はじめから入っています。",
+    "  ・空のときは、取り込む先のプロジェクトキーを書いてください。"
+    "空のままでも取り込めますが、プロジェクトを確かめられず、そのたびに注意が出ます。",
     "",
     "■ 共通",
     "  ・列は見出しの名前で読みます。要らない列は消して構いません。",
     "  ・見出しが # で始まる列は読み飛ばします（メモ用）。",
     "  ・カテゴリーなど複数の値は、改行（Alt+Enter）か「,」で区切ります。",
     "  ・カスタム属性は、その名前を見出しにした列を足すと使えます。",
-    "  ・使える名前（種別・担当者・カスタム属性など）は backlog-issue-sheet master で確かめられます。",
+    "  ・使える名前（種別・担当者・カスタム属性など）は、"
+    "メニューの「使える名前の一覧」（backlog-issue-sheet master）で確かめられます。",
     f"  ・{REGISTER_SHEET}シートでは行の順番が親子関係を表すため、並べ替えないでください。",
 ]
 
