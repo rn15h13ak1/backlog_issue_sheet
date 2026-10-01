@@ -640,6 +640,20 @@ def check_sheet_duplicates(plan: Plan) -> None:
         ))
 
 
+_SHEET_ORDER = {PROJECT_SHEET: 0, REGISTER_SHEET: 1, UPDATE_SHEET: 2}
+
+
+def _display_order(p: Problem) -> tuple:
+    """
+    表示の順番。プロジェクト → 登録 → 更新のシートごとに、行の無いもの → 行の順。
+
+    検証は「各行を読んで見つかるもの」と「シート全体を見て判定するもの（親子の制約・
+    重複）」の 2 段で行うため、見つかった順のままだと同じ行のエラーが離れて並ぶ。
+    同じ行の中では見つかった順を保つ（sorted は安定）。
+    """
+    return (_SHEET_ORDER.get(p.sheet, len(_SHEET_ORDER)), p.row is not None, p.row or 0)
+
+
 def build_plan(
     sheets: dict[str, SheetData], master: Master, client, *, allow_duplicates: bool = False,
 ) -> Plan:
@@ -653,4 +667,6 @@ def build_plan(
             check_duplicates(plan, master, client)
     if UPDATE_SHEET in sheets:
         plan_update(sheets[UPDATE_SHEET], master, issues, plan)
+    plan.problems.sort(key=_display_order)
+    plan.warnings.sort(key=_display_order)
     return plan

@@ -202,6 +202,37 @@ class TestParent:
         assert any("DEMO-2 には子課題（DEMO-3）" in m for m in messages(plan))
 
 
+
+class TestProblemOrder:
+    """
+    各行を読んで見つかるエラーと、シート全体で判定する親子の制約のエラーは、
+    別々の段で見つかる。見つかった順のままだと、同じ行のエラーが離れて並ぶ。
+    """
+
+    def test_エラーは行の順に並ぶ(self, plan_of, fake):
+        a = fake.add("A")                         # DEMO-1
+        fake.add("A の子", parent=a)              # DEMO-2
+        fake.add("B")                             # DEMO-3
+        fake.add("C")                             # DEMO-4
+        plan = plan_of(upd([
+            ["DEMO-4", "DEMO-4", None, None, None, None],   # 自分自身（行を読んで見つかる）
+            ["DEMO-3", "DEMO-2", None, None, None, None],   # 子課題を親に（シート全体で判定）
+            ["DEMO-1", "DEMO-99", None, None, None, None],  # 見つからない（行を読んで見つかる）
+        ]))
+        assert [p.row for p in plan.problems] == [2, 3, 4]
+
+    def test_同じ行の中では見つかった順を保ち_シートの順は登録_更新(self, plan_of, fake):
+        fake.add("A")
+        plan = plan_of({
+            "更新": (["課題キー", "件名"], [["DEMO-1", "(削除)"]]),
+            "登録": (["件名", "種別", "優先度"], [["x", "無い種別", "無い優先度"]]),
+        })
+        sheets = [p.sheet for p in plan.problems]
+        assert sheets == sorted(sheets, key=["登録", "更新"].index)
+        # 同じ行の中は、列を読んだ順（種別 → 優先度）のまま
+        assert [p.column for p in plan.problems if p.sheet == "登録"][:2] == ["種別", "優先度"]
+
+
 class TestBothSheets:
     def test_登録と更新を同時に扱う(self, plan_of, issue):
         plan = plan_of({
