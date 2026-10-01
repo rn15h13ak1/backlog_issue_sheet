@@ -71,13 +71,13 @@ class TestConfig:
 class TestImport:
     def test_ドライランでは送らない(self, env, fake, make_book, capsys):
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book)]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録"]) == cli.EXIT_OK
         assert fake.calls == []
         assert "ドライラン" in capsys.readouterr().out
 
     def test_エラーがあれば終了コード1で何も送らない(self, env, fake, make_book, capsys):
         book = make_book({"登録": (REG, [[None, "○", "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_FAILED
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_FAILED
         assert fake.calls == []
         assert "エラー（1 件）" in capsys.readouterr().out
 
@@ -86,7 +86,7 @@ class TestImport:
             [None, None, "親", "タスク", "中"],
             [None, "○", "子", "タスク", "中"],
         ])})
-        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_OK
         assert len(fake.calls) == 2
         out = env / "output"
         logs = list(out.glob("run_*.csv"))
@@ -102,35 +102,75 @@ class TestImport:
     def test_対話できなければ確認なしには送らない(self, env, fake, make_book, monkeypatch):
         monkeypatch.setattr("sys.stdin.isatty", lambda: False)
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book), "--execute"]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute"]) == cli.EXIT_OK
         assert fake.calls == []
 
     def test_失敗があれば終了コード1(self, env, fake, make_book):
         fake.fail_create_matching = "a"
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_FAILED
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_FAILED
 
     def test_limit_は1以上(self, env, make_book):
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book), "--limit", "0"]) == cli.EXIT_USAGE
+        assert cli.main(["import", str(book), "--sheet", "登録", "--limit", "0"]) == cli.EXIT_USAGE
 
     def test_別のプロジェクト向けのブックは送らずに終了コード1(self, env, fake, make_book, capsys):
         book = make_book({
             "登録": (REG, [[None, None, "a", "タスク", "中"]]),
             "プロジェクト": (["プロジェクトキー", "OTHER"], []),
         })
-        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_FAILED
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_FAILED
         assert fake.calls == []
         assert "OTHER 向け" in capsys.readouterr().out
 
     def test_ドライランの案内はメニューから呼ばれたらメニューの操作で示す(self, env, make_book, capsys):
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book)]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録"]) == cli.EXIT_OK
         assert "--execute を付けてください" in capsys.readouterr().out
-        assert cli.main(["import", str(book), "--from-menu"]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録", "--from-menu"]) == cli.EXIT_OK
         out = capsys.readouterr().out
         assert "メニューの「取り込み（実行）」を選んでください" in out and "--execute" not in out
 
+
+
+class TestSelectSheet:
+    """取り込むシートは 1 つだけ指定する。書いたまま残っていたもう一方のシートの行を送らないため。"""
+
+    @pytest.fixture
+    def both(self, fake, make_book):
+        fake.add("既存")
+        return make_book({
+            "登録": (REG, [[None, None, "新規", "タスク", "中"]]),
+            "更新": (["課題キー", "件名"], [["DEMO-1", "変更"]]),
+        })
+
+    def test_登録を指定すると更新シートは送らない(self, env, fake, both, capsys):
+        assert cli.main(["import", str(both), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_OK
+        assert [c[0] for c in fake.calls] == ["create"]
+        assert fake.get_issue("DEMO-1")["summary"] == "既存"
+        assert "「更新」シートにも 1 行ありますが、今回は読みません" in capsys.readouterr().out
+
+    def test_更新を指定すると登録シートは送らない(self, env, fake, both, capsys):
+        assert cli.main(["import", str(both), "--sheet", "更新", "--execute", "--yes"]) == cli.EXIT_OK
+        assert fake.calls == [("update", "DEMO-1", {"summary": "変更"})]
+        assert "「登録」シートにも 1 行ありますが、今回は読みません" in capsys.readouterr().out
+
+    def test_もう一方のシートが空なら知らせない(self, env, make_book, capsys):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]]), "更新": (["課題キー"], [])})
+        assert cli.main(["import", str(book), "--sheet", "登録"]) == cli.EXIT_OK
+        assert "今回は読みません" not in capsys.readouterr().out
+
+    def test_指定したシートが無ければ終了コード2(self, env, make_book, capsys):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_USAGE
+        assert "「更新」シートがありません" in capsys.readouterr().err
+
+    def test_シートの指定は必須(self, env, make_book, capsys):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        with pytest.raises(SystemExit) as e:
+            cli.main(["import", str(book)])
+        assert e.value.code == 2
+        assert "--sheet" in capsys.readouterr().err
 
 class TestOtherCommands:
     def test_template(self, env):
@@ -182,7 +222,7 @@ class TestPlanDisplay:
         p = fake.add("親")
         fake.add("x", assigneeId=10)
         book = make_book({"更新": (["課題キー", "親課題キー", "担当者"], [["DEMO-2", "DEMO-1", "佐藤花子"]])})
-        assert cli.main(["import", str(book)]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_OK
         out = capsys.readouterr().out
         assert "親課題キー: （なし） → DEMO-1" in out
         assert "担当者: 山田太郎 → 佐藤花子" in out
@@ -193,7 +233,7 @@ class TestPlanDisplay:
             [None, None, "親", "タスク", "中", None],
             [None, "○", "子", "タスク", "中", "処理中"],
         ])})
-        cli.main(["import", str(book)])
+        cli.main(["import", str(book), "--sheet", "登録"])
         out = capsys.readouterr().out
         assert "└ 子（親: 2行目）" in out
         assert "状態=処理中（作成後に更新）" in out
@@ -228,8 +268,8 @@ class TestOutputNames:
 
     def test_同じ秒に2回取り込んでも実行ログが両方残る(self, env, fake, make_book, same_second):
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
-        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_OK
-        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--sheet", "登録", "--execute", "--yes"]) == cli.EXIT_OK
         names = sorted(f.name for f in (env / "output").iterdir())
         assert names == [
             "run_20261001_120000.csv", "run_20261001_120000_2.csv",

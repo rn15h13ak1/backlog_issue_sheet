@@ -105,6 +105,15 @@ def ask_excel(history: dict) -> str | None:
         print(f"  ※ ファイルが見つかりません: {path}")
 
 
+# 取り込むシート。もう一方のシートは読まないので、書いたまま残った行を送らない
+SHEETS = [("登録", "課題を新しく作る"), ("更新", "既存の課題を変更する")]
+
+
+def ask_sheet() -> str | None:
+    choice = print_menu("取り込むシート", [f"{name} ― {desc}" for name, desc in SHEETS])
+    return None if choice == 0 else SHEETS[choice - 1][0]
+
+
 def build_args(action: str, config: str | None, history: dict) -> list[str] | None:
     common = ["--config", config] if config else []
     if action == "template":
@@ -115,7 +124,10 @@ def build_args(action: str, config: str | None, history: dict) -> list[str] | No
         excel = ask_excel(history)
         if excel is None:
             return None
-        args = ["import", excel, *common]
+        sheet = ask_sheet()
+        if sheet is None:
+            return None
+        args = ["import", excel, "--sheet", sheet, *common]
         if action == "dry":
             # 「--execute を付けて」の案内を、メニューの操作に置き換えてもらう
             args.append("--from-menu")

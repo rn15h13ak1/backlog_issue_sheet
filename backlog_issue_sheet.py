@@ -5,8 +5,8 @@ Excel の「登録」「更新」シートから Backlog の課題を作成・�
 Backlog の課題を、同じ書式の Excel に書き出すこともできる。
 
   backlog-issue-sheet template                 ひな形を作る
-  backlog-issue-sheet import 課題.xlsx           ドライラン（既定）
-  backlog-issue-sheet import 課題.xlsx --execute
+  backlog-issue-sheet import 課題.xlsx --sheet 登録             ドライラン（既定）
+  backlog-issue-sheet import 課題.xlsx --sheet 更新 --execute
   backlog-issue-sheet export                   Backlog → Excel
   backlog-issue-sheet master                   使える名前の一覧
 """
@@ -40,7 +40,7 @@ from fields import (
 )
 from master import CF_TYPE_NAMES, Master
 from planner import Plan, build_plan
-from sheet_io import SheetError, read_workbook, unique_stamp, write_workbook
+from sheet_io import Book, SheetError, read_workbook, unique_stamp, write_workbook
 
 TOOL_DIR = Path(__file__).resolve().parent
 # メニュー（menu.py）の「取り込み（実行）」の表示名。ドライランの案内に使う
@@ -295,10 +295,29 @@ def cmd_master(args) -> int:
     return EXIT_OK
 
 
+def select_sheet(book: Book, name: str, excel: str) -> tuple[Book, list[str]]:
+    """
+    指定したシートだけを残す。返り値の 2 つ目は、読まなかったシートについての知らせ。
+
+    両方のシートを一度に読むと、前に書いたまま残っていた行まで送ってしまう。
+    そのつもりの無いシートは、行があっても読まない。
+    """
+    if name not in book:
+        others = " / ".join(book) or "なし"
+        raise SheetError(f"「{name}」シートがありません: {Path(excel).name}（取り込めるシート: {others}）")
+    notes = [
+        f"※ 「{other}」シートにも {len(sheet.rows)} 行ありますが、今回は読みません（取り込むのは「{name}」シートだけ）"
+        for other, sheet in book.items() if other != name and sheet.rows
+    ]
+    return Book({name: book[name]}, project_key=book.project_key), notes
+
+
 def cmd_import(args) -> int:
     config, config_path, client, master = connect(args)
-    sheets = read_workbook(args.excel)
-    print(f"読み込み: {args.excel}（{' / '.join(f'{n} {len(s.rows)} 行' for n, s in sheets.items())}）")
+    sheets, notes = select_sheet(read_workbook(args.excel), args.sheet, args.excel)
+    print(f"読み込み: {args.excel}（{args.sheet} {len(sheets[args.sheet].rows)} 行）")
+    for note in notes:
+        print(note)
     print("Backlog の現在の状態と照らし合わせています…")
     plan = build_plan(sheets, master, client)
 
@@ -387,6 +406,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("import", parents=[common], help="Excel の内容を Backlog に反映する（既定はドライラン）")
     p.add_argument("excel", help="取り込む Excel（xlsx / xlsm）")
+    p.add_argument(
+        "--sheet", required=True, choices=[REGISTER_SHEET, UPDATE_SHEET],
+        help=f"取り込むシート。{REGISTER_SHEET}＝課題を新しく作る / {UPDATE_SHEET}＝既存の課題を変更する。"
+        "もう一方のシートは読まない",
+    )
     p.add_argument("--execute", action="store_true", help="実際に送信する")
     p.add_argument("--yes", action="store_true", help="確認を省く（--execute と一緒に使う）")
     p.add_argument("--limit", type=int, help="先頭から N 件だけ送信する（試しに少しだけ反映するとき）")
