@@ -60,7 +60,9 @@ class ConfigError(Exception):
 # ---------------------------------------------------------------------------
 
 ALLOWED_KEYS = {"backlog", "output_dir"}
-ALLOWED_BACKLOG_KEYS = {"space_host", "project_key", "ssl_verify", "base_path"}
+ALLOWED_BACKLOG_KEYS = {"space_host", "project_key", "api_key", "ssl_verify", "base_path"}
+# config.example.yaml の例の値。コピーしたまま残っていても、書いていないものとして扱う
+API_KEY_PLACEHOLDER = "YOUR_API_KEY_HERE"
 
 
 def find_config(explicit: str | None) -> Path:
@@ -92,10 +94,6 @@ def load_config(path: Path) -> dict:
         problems.append("backlog の節がありません")
         backlog = {}
     problems += [f"未知の項目: backlog.{k}" for k in backlog if k not in ALLOWED_BACKLOG_KEYS]
-    if "api_key" in backlog:
-        problems.append(
-            f"API キーは設定ファイルに書かず、環境変数 {API_KEY_ENV} か .env に書いてください"
-        )
     for required in ("space_host", "project_key"):
         if not backlog.get(required):
             problems.append(f"backlog.{required} が空です")
@@ -124,17 +122,26 @@ def read_dotenv(path: Path) -> dict[str, str]:
     return values
 
 
-def find_api_key(config_path: Path) -> str:
-    """環境変数、設定ファイルと同じ場所の .env、作業ディレクトリの .env の順に探す。"""
+def find_api_key(config_path: Path, config: dict | None = None) -> str:
+    """
+    環境変数、設定ファイルの backlog.api_key、設定ファイルと同じ場所の .env、
+    作業ディレクトリの .env の順に探す。
+
+    環境変数を先に見るのは、設定ファイルを書き換えずに差し替えられるようにするため
+    （共通規約 C「設定ファイル」）。例の値のままの api_key は、書いていないものとみなす。
+    """
     if os.environ.get(API_KEY_ENV):
         return os.environ[API_KEY_ENV]
+    in_config = str(((config or {}).get("backlog") or {}).get("api_key") or "").strip()
+    if in_config and in_config != API_KEY_PLACEHOLDER:
+        return in_config
     for env_path in (config_path.parent / ".env", Path.cwd() / ".env"):
         value = read_dotenv(env_path).get(API_KEY_ENV)
         if value:
             return value
     raise ConfigError(
-        f"API キーがありません。環境変数 {API_KEY_ENV} を設定するか、"
-        f"設定ファイルと同じ場所の .env に {API_KEY_ENV}=... と書いてください"
+        f"API キーがありません。環境変数 {API_KEY_ENV}、設定ファイルの backlog.api_key、"
+        f"設定ファイルと同じ場所の .env（{API_KEY_ENV}=...）のどれかに書いてください"
     )
 
 
@@ -283,7 +290,7 @@ def ask(prompt: str, assume_yes: bool) -> bool:
 def connect(args) -> tuple[dict, Path, BacklogClient, Master]:
     config_path = find_config(args.config)
     config = load_config(config_path)
-    client = make_client(config, find_api_key(config_path), args.debug)
+    client = make_client(config, find_api_key(config_path, config), args.debug)
     print(f"接続先: {config['backlog']['space_host']} / {config['backlog']['project_key']}")
     master = Master.load(client, config["backlog"]["project_key"])
     return config, config_path, client, master

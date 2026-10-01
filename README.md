@@ -54,23 +54,27 @@ backlog-issue-sheet --help
 cp config.example.yaml config.yaml
 ```
 
-`config.yaml` に、スペースのホスト名とプロジェクトキーを書きます。1 回の実行で扱うプロジェクトは 1 つです。
+`config.yaml` に、スペースのホスト名・プロジェクトキー・API キーを書きます。1 回の実行で扱うプロジェクトは 1 つです。API キーは Backlog の「個人設定 → API」で発行します。
 
 ```yaml
 backlog:
   space_host: "yourcompany.backlog.com"
   project_key: "MYPROJ"
+  api_key: "YOUR_API_KEY_HERE"
 ```
 
-**2. API キーを置く**
+`config.yaml` は API キーを含むため、`.gitignore` で除外しています。
 
-API キーは設定ファイルには書きません（[共通規約 C](../ws-conventions/README.md#設定ファイル)）。環境変数か、設定ファイルと同じ場所の `.env` に書きます。`.env` は追跡しません。
+**2. API キーをほかの場所に置く（任意）**
 
-```bash
-echo 'BACKLOG_API_KEY=YOUR_API_KEY_HERE' > .env
-```
+API キーは、`config.yaml` のほかに次の場所にも置けます（[共通規約 C](../ws-conventions/README.md#設定ファイル)）。
 
-探す順番は、環境変数 `BACKLOG_API_KEY` → 設定ファイルと同じ場所の `.env` → 作業ディレクトリの `.env` です。
+| 置き場 | 使いどころ |
+|---|---|
+| 環境変数 `BACKLOG_API_KEY` | 定期実行などで、ファイルを書き換えずに差し替えたい |
+| 設定ファイルと同じ場所の `.env` | `config.yaml` には書きたくない（`echo 'BACKLOG_API_KEY=…' > .env`。`.env` も追跡しない） |
+
+探す順番は、環境変数 `BACKLOG_API_KEY` → `config.yaml` の `backlog.api_key` → 設定ファイルと同じ場所の `.env` → 作業ディレクトリの `.env` です。`api_key` が例の値（`YOUR_API_KEY_HERE`）のままなら、書いていないものとして次を探します。
 
 設定ファイルは、作業ディレクトリの `config.yaml`、ツールの場所の `config.yaml` の順に探します。`--config` で指定することもできます。
 

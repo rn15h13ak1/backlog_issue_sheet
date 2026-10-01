@@ -26,11 +26,53 @@ def env(tmp_path, monkeypatch, fake):
 
 
 class TestConfig:
-    def test_API_キーを設定ファイルに書くとエラー(self, tmp_path):
+    def test_API_キーを設定ファイルに書ける(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(cli.API_KEY_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
         path = tmp_path / "c.yaml"
-        path.write_text(CONFIG + '  api_key: "x"\n', encoding="utf-8")
-        with pytest.raises(cli.ConfigError, match="環境変数"):
+        path.write_text(CONFIG + '  api_key: "from-config"\n', encoding="utf-8")
+        assert cli.find_api_key(path, cli.load_config(path)) == "from-config"
+
+    def test_環境変数は設定ファイルより先(self, tmp_path, monkeypatch):
+        """設定ファイルを書き換えずに差し替えられるように（共通規約 C）。"""
+        monkeypatch.setenv(cli.API_KEY_ENV, "from-env")
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + '  api_key: "from-config"\n', encoding="utf-8")
+        assert cli.find_api_key(path, cli.load_config(path)) == "from-env"
+
+    def test_設定ファイルは_env_より先(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(cli.API_KEY_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".env").write_text(f"{cli.API_KEY_ENV}=from-dotenv\n", encoding="utf-8")
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + '  api_key: "from-config"\n', encoding="utf-8")
+        assert cli.find_api_key(path, cli.load_config(path)) == "from-config"
+
+    def test_例の値のままの_api_key_は書いていないものとみなす(self, tmp_path, monkeypatch):
+        """テンプレートをコピーしただけの config.yaml でも、.env が使われるように。"""
+        monkeypatch.delenv(cli.API_KEY_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".env").write_text(f"{cli.API_KEY_ENV}=from-dotenv\n", encoding="utf-8")
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + '  api_key: "YOUR_API_KEY_HERE"\n', encoding="utf-8")
+        assert cli.find_api_key(path, cli.load_config(path)) == "from-dotenv"
+
+    def test_例の値のままで_ほかにも無ければエラー(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(cli.API_KEY_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + '  api_key: "YOUR_API_KEY_HERE"\n', encoding="utf-8")
+        with pytest.raises(cli.ConfigError, match="backlog.api_key"):
+            cli.find_api_key(path, cli.load_config(path))
+
+    def test_同梱の設定例の_api_key_の項目は受け付ける(self, tmp_path):
+        """例の値のままのホスト名だけがエラーになる。"""
+        path = tmp_path / "c.yaml"
+        path.write_text((cli.TOOL_DIR / "config.example.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+        with pytest.raises(cli.ConfigError) as e:
             cli.load_config(path)
+        # 1 行目はファイルのパス（テスト名を含む）なので、問題を並べた 2 行目以降を見る
+        assert str(e.value).splitlines()[1:] == ["  backlog.space_host が例のままです"]
 
     def test_例のままのホストはエラー(self, tmp_path):
         path = tmp_path / "c.yaml"

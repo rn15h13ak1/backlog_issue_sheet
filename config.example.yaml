@@ -1,19 +1,19 @@
 # ============================================================
 # backlog-issue-sheet 設定ファイル
 # ============================================================
-# コピーして config.yaml を作ってください（config.yaml は追跡しません）。
+# このファイルをコピーして config.yaml を作ってください。
+# config.yaml は .gitignore で除外されています（API キーを含むため）。
 #
 #   cp config.example.yaml config.yaml
 #
-# API キーはここに書きません。環境変数 BACKLOG_API_KEY か、
-# この設定ファイルと同じ場所の .env に書きます。
-#
-#   BACKLOG_API_KEY=YOUR_API_KEY_HERE
+# API キーは、環境変数 BACKLOG_API_KEY や、この設定ファイルと同じ場所の
+# .env（BACKLOG_API_KEY=...）にも置けます。環境変数があれば、そちらを先に使います。
 # ============================================================
 
 backlog:
   space_host: "yourcompany.backlog.com"   # スペースのホスト名
   project_key: "MYPROJ"                   # 対象のプロジェクト（1 回の実行で 1 つだけ）
+  api_key: "YOUR_API_KEY_HERE"            # Backlog API キー（個人設定 → API から取得）
   ssl_verify: true                        # オンプレ版で自己署名証明書のときだけ false
   base_path: ""                           # オンプレ版のパスプレフィックス（例: "/backlog"）
 
