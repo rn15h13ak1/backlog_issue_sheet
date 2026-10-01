@@ -7,9 +7,10 @@
 
 import datetime as dt
 
+import pytest
 from openpyxl import load_workbook
 
-from exporter import ExportFilter, export
+from exporter import ExportError, ExportFilter, export
 from planner import build_plan
 from sheet_io import read_workbook, write_workbook
 
@@ -99,6 +100,38 @@ class TestExport:
         url = ws.cell(row=2, column=headers.index("#URL") + 1).value
         assert url == "https://example.backlog.com/view/DEMO-1"
 
+
+
+class TestForeignProject:
+    """
+    Backlog は、見られる課題ならプロジェクトを問わず課題キーで返す。名前の対応表は
+    接続先のものなので、別のプロジェクトの課題は書き出さない（戻しても取り込めない）。
+    """
+
+    @pytest.fixture
+    def other(self, fake):
+        issue = fake.add("別プロジェクトの課題")
+        issue["issueKey"] = "OTHER-7"            # 偽の Backlog が返せる状態にしておく
+        return issue
+
+    def test_key_に別のプロジェクトの課題を指定するとエラー(self, fake, master, tmp_path, other):
+        with pytest.raises(ExportError, match=r"別のプロジェクトの課題です（OTHER-7）。扱えるのは DEMO の課題だけです"):
+            export(fake, master, tmp_path / "o.xlsx", ExportFilter(keys=["OTHER-7"]))
+        assert not (tmp_path / "o.xlsx").exists()
+
+    def test_一部だけ別のプロジェクトでも何も書き出さない(self, fake, master, tmp_path, other):
+        fake.add("x")
+        with pytest.raises(ExportError, match="OTHER-7"):
+            export(fake, master, tmp_path / "o.xlsx", ExportFilter(keys=["DEMO-2", "OTHER-7"]))
+        assert not (tmp_path / "o.xlsx").exists()
+
+    def test_parent_に別のプロジェクトの課題を指定するとエラー(self, fake, master, tmp_path, other):
+        with pytest.raises(ExportError, match="別のプロジェクトの課題です（OTHER-7）"):
+            export(fake, master, tmp_path / "o.xlsx", ExportFilter(parent_key="OTHER-7"))
+
+    def test_大文字小文字の違いは同じプロジェクトとみなす(self, master):
+        assert master.foreign_key_message("demo-1") == ""
+        assert master.foreign_key_message("DEMOX-1") != ""
 
 class TestTemplate:
     def test_ひな形は空のまま取り込める(self, master, fake, tmp_path):

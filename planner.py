@@ -265,12 +265,9 @@ def _parse_issue_key(
     if not ISSUE_KEY_RE.match(key):
         problems.append(Problem(sheet.name, row_no, column, f"課題キーの形ではありません（{key}）"))
         return None
-    prefix = master.project_key.upper() + "-"
-    if master.project_key and not key.startswith(prefix):
-        problems.append(Problem(
-            sheet.name, row_no, column,
-            f"別のプロジェクトの課題です（{key}）。扱えるのは {master.project_key} の課題だけです",
-        ))
+    foreign = master.foreign_key_message(key)
+    if foreign:
+        problems.append(Problem(sheet.name, row_no, column, foreign))
         return None
     return key
 

@@ -107,6 +107,11 @@ def _resolve_names(names: list[str], table) -> list[int]:
 
 def fetch_issues(client, master: Master, flt: ExportFilter) -> list[dict]:
     """条件に合う課題を集める。子だけが当たった場合は、その親も加える。"""
+    # 課題キーで 1 件ずつ取る指定は、Backlog がプロジェクトを問わず返すため、取る前に確かめる
+    for key in [*flt.keys, *([flt.parent_key] if flt.parent_key else [])]:
+        foreign = master.foreign_key_message(key)
+        if foreign:
+            raise ExportError(foreign)
     if flt.keys:
         issues = []
         for key in flt.keys:

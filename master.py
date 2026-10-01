@@ -201,6 +201,17 @@ class Master:
     def table(self, key: str) -> NameTable:
         return self.tables[key]
 
+    def foreign_key_message(self, key: str) -> str:
+        """
+        key が別のプロジェクトの課題キーなら、その旨の文。このプロジェクトのものなら空文字。
+
+        Backlog は、見られる課題ならプロジェクトに関係なく課題キーで返す。名前の対応表は
+        接続先のプロジェクトのものなので、別のプロジェクトの課題は正しく読み書きできない。
+        """
+        if self.project_key and not key.upper().startswith(self.project_key.upper() + "-"):
+            return f"別のプロジェクトの課題です（{key}）。扱えるのは {self.project_key} の課題だけです"
+        return ""
+
     def custom_field_by_name(self, name: str) -> CustomField | None:
         for cf in self.custom_fields:
             if cf.name == name:
