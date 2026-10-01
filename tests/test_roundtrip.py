@@ -119,3 +119,30 @@ class TestTemplate:
         ws = load_workbook(path)["登録"]
         formulas = [dv.formula1 for dv in ws.data_validations.dataValidation]
         assert any("_マスタ" in f for f in formulas)
+
+    def test_同姓同名の担当者はプルダウンにログイン_ID_で並ぶ(self, fake, tmp_path, monkeypatch):
+        """同じ名前を選ぶと、取り込みで「名前では特定できません」になる。選んで通る値だけを並べる。"""
+        import conftest
+        from master import Master
+
+        monkeypatch.setattr(conftest, "USERS", conftest.USERS + [{"id": 12, "name": "山田太郎", "userId": "yamada2"}])
+        master = Master.load(fake, "DEMO")
+        path = write_workbook(tmp_path / "t.xlsx", master)
+
+        wb = load_workbook(path)
+        ws = wb["_マスタ"]
+        column = [c.value for c in ws[1]].index("担当者") + 1
+        choices = [ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)]
+        choices = [c for c in choices if c]
+        assert choices == ["yamada", "佐藤花子", "yamada2"]
+
+        # 選択肢をそのまま書いたら、それぞれ別の担当者として取り込める
+        reg = wb["登録"]
+        headers = [c.value for c in reg[1]]
+        for r, choice in enumerate(choices, start=2):
+            for header, value in (("件名", choice), ("種別", "タスク"), ("優先度", "中"), ("担当者", choice)):
+                reg.cell(row=r, column=headers.index(header) + 1, value=value)
+        wb.save(path)
+        plan = build_plan(read_workbook(path), master, fake)
+        assert plan.ok, [str(x) for x in plan.problems]
+        assert [c.values["assigneeId"] for c in plan.creates] == [10, 11, 12]

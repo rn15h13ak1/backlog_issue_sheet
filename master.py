@@ -86,6 +86,20 @@ class NameTable:
                 seen.append(name)
         return seen
 
+    def choices(self) -> list[str]:
+        """
+        セルにそのまま書ける値の一覧（プルダウン用）。
+
+        名前で特定できる項目は名前、同名があってログイン ID で書き分ける項目は
+        ログイン ID にする（name_of と同じ。書き出しのセルとそろう）。
+        """
+        seen: list[str] = []
+        for item in self.items:
+            value = self.name_of(item["id"])
+            if value not in seen:
+                seen.append(value)
+        return seen
+
     def labels(self) -> list[str]:
         """
         一覧に表示する名前。ログイン ID があれば「名前（ID）」にする。

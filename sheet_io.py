@@ -191,7 +191,8 @@ def _write_master_sheet(wb: Workbook, master: Master) -> dict[str, str]:
         if col.kind != "name":   # 複数値の列は 1 つしか選べないプルダウンに向かない
             continue
         table = col.custom.items if col.is_custom else master.table(col.table)
-        lists[col.header] = table.names()
+        # 同姓同名のユーザーは名前では特定できず、選んでも取り込みでエラーになる
+        lists[col.header] = table.choices()
 
     refs = {}
     for idx, (header, names) in enumerate(lists.items(), start=1):
