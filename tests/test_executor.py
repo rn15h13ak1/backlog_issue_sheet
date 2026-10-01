@@ -5,6 +5,7 @@ import csv
 import pytest
 
 import executor
+from backlog_client import BacklogAPIError
 from executor import CREATED, FAILED, NO_CHANGE, NOT_RUN, SKIPPED, UPDATED, RunLog, execute
 
 REG = ["親課題キー", "子課題", "件名", "種別", "優先度"]
@@ -73,6 +74,54 @@ class TestCreate:
         assert outcomes(results) == [(2, FAILED), (3, NOT_RUN)]
         assert len(fake.calls) == 1
 
+
+class TestFatal:
+    """認証・権限のエラー（401・403）は、どの段階で起きても以降を送らない。"""
+
+    @staticmethod
+    def fatal_update(fake, monkeypatch, *, keys=None):
+        original = fake.update_issue
+
+        def update(key, params):
+            if keys is None or key in keys:
+                fake.calls.append(("update", key, dict(params)))
+                raise BacklogAPIError("HTTP 403", status=403, fatal=True)
+            return original(key, params)
+        monkeypatch.setattr(fake, "update_issue", update)
+
+    def test_更新の途中で止める(self, plan_of, fake, monkeypatch):
+        fake.add("a")
+        fake.add("b")
+        self.fatal_update(fake, monkeypatch)
+        plan = plan_of({"更新": (["課題キー", "件名"], [["DEMO-1", "x"], ["DEMO-2", "y"]])})
+        results = run(plan, fake)
+        assert outcomes(results) == [(2, FAILED), (3, NOT_RUN)]
+        assert results[0].fatal and not results[1].fatal
+        assert len(fake.calls) == 1
+
+    def test_登録で止めたら更新も送らない(self, plan_of, fake):
+        fake.add("既存")
+        fake.fatal_on_create = True
+        plan = plan_of({
+            "登録": (REG, [[None, None, "a", "タスク", "中"]]),
+            "更新": (["課題キー", "件名"], [["DEMO-1", "x"]]),
+        })
+        results = run(plan, fake)
+        assert outcomes(results) == [(2, FAILED), (2, NOT_RUN)]
+        assert [r.sheet for r in results] == ["登録", "更新"]
+        assert [c[0] for c in fake.calls] == ["create"]
+
+    def test_作成後の更新で止めても課題キーは残し_以降は送らない(self, plan_of, fake, monkeypatch):
+        """作成は済んでいる。キーを失うと、再実行で二重に作ってしまう。"""
+        self.fatal_update(fake, monkeypatch)
+        plan = plan_of({"登録": (REG + ["状態"], [
+            [None, None, "a", "タスク", "中", "処理中"],
+            [None, None, "b", "タスク", "中", None],
+        ])})
+        results = run(plan, fake)
+        assert outcomes(results) == [(2, FAILED), (3, NOT_RUN)]
+        assert results[0].issue_key == "DEMO-1" and results[0].fatal
+        assert [c[0] for c in fake.calls] == ["create", "update"]
 
 class TestUpdate:
     def test_差分だけを送る(self, plan_of, fake):

@@ -83,6 +83,39 @@ class TestExport:
         _, count, _ = export(fake, master, tmp_path / "o.xlsx", ExportFilter(parent_key="DEMO-1"))
         assert count == 2
 
+    def test_課題キーを指定して書き出す(self, fake, master, tmp_path):
+        a = fake.add("親")                       # DEMO-1
+        fake.add("子", parent=a)                 # DEMO-2
+        fake.add("無関係")                       # DEMO-3
+        fake.add("完了", statusId=4)             # DEMO-4
+        out, count, _ = export(fake, master, tmp_path / "o.xlsx", ExportFilter(keys=["DEMO-4", "DEMO-2"]))
+        rows = [(r[0].value, r[1].value) for r in load_workbook(out)["更新"].iter_rows(min_row=2)]
+        # 指定した子の親も加え、親の直後に子を並べる。キーを指定したときは完了も書き出す
+        assert rows == [("DEMO-1", None), ("DEMO-2", "DEMO-1"), ("DEMO-4", None)]
+        assert count == 3
+
+    def test_課題キーが1つでも見つからなければ書き出さない(self, fake, master, tmp_path):
+        fake.add("x")
+        with pytest.raises(ExportError, match="DEMO-50 が見つかりません"):
+            export(fake, master, tmp_path / "o.xlsx", ExportFilter(keys=["DEMO-1", "DEMO-50"]))
+        assert not (tmp_path / "o.xlsx").exists()
+
+    def test_親が見つからなければ書き出さない(self, fake, master, tmp_path):
+        with pytest.raises(ExportError, match="DEMO-99 が見つかりません"):
+            export(fake, master, tmp_path / "o.xlsx", ExportFilter(parent_key="DEMO-99"))
+        assert not (tmp_path / "o.xlsx").exists()
+
+    def test_種別で絞る(self, fake, master, tmp_path):
+        fake.add("タスク", issueTypeId=1)
+        fake.add("バグ", issueTypeId=2)
+        out, count, _ = export(fake, master, tmp_path / "o.xlsx", ExportFilter(types=["バグ"]))
+        assert count == 1
+        assert load_workbook(out)["更新"]["A2"].value == "DEMO-2"
+
+    def test_種別の名前の誤りは書き出さない(self, fake, master, tmp_path):
+        with pytest.raises(ExportError, match="種別「障害」が見つかりません"):
+            export(fake, master, tmp_path / "o.xlsx", ExportFilter(types=["障害"]))
+
     def test_長すぎる本文は空にする(self, fake, master, tmp_path):
         fake.add("x", description="あ" * 40000)
         out, _, warnings = export(fake, master, tmp_path / "o.xlsx", ExportFilter())

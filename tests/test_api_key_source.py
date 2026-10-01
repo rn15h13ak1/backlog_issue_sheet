@@ -96,3 +96,17 @@ class TestSource:
         out, err = capsys.readouterr()
         assert "認証・権限のエラーで中止しました。" in out
         assert "  使った API キー: 環境変数 BACKLOG_API_KEY" in err
+
+
+    def test_更新の途中で権限のエラーになったとき(self, workdir, fake, make_book, monkeypatch, capsys):
+        monkeypatch.setenv(cli.API_KEY_ENV, "k")
+        fake.add("x")
+
+        def forbidden(key, params):
+            raise BacklogAPIError("API 呼び出しに失敗しました（HTTP 403）", status=403, fatal=True)
+        monkeypatch.setattr(fake, "update_issue", forbidden)
+        book = make_book({"更新": (["課題キー", "件名"], [["DEMO-1", "y"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新", "--execute", "--yes"]) == cli.EXIT_FAILED
+        out, err = capsys.readouterr()
+        assert "認証・権限のエラーで中止しました。" in out
+        assert "  使った API キー: 環境変数 BACKLOG_API_KEY" in err
