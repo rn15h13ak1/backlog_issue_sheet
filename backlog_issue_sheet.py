@@ -184,9 +184,31 @@ def print_problems(plan: Plan) -> None:
             print(f"  ✗ {p}")
 
 
+def error_rows(plan: Plan, sheet: str) -> set[int]:
+    """エラーのある行の行番号。"""
+    return {p.row for p in plan.problems if p.sheet == sheet and p.row is not None}
+
+
+def row_mark(row_no: int, errors: set[int]) -> str:
+    """
+    行の頭に付ける印。エラーのある行は ✗。
+
+    予定の一覧は、エラーのある行も読めた値だけで組み立てて並べる。印が無いと、
+    件名が空の行や項目の抜けた行まで「作られる」ように読めてしまう。
+    """
+    return "✗ " if row_no in errors else "  "
+
+
+def error_note(rows: list[int], errors: set[int]) -> str:
+    n = sum(1 for r in rows if r in errors)
+    return f"（うちエラー {n} 行）" if n else ""
+
+
 def print_plan(plan: Plan, master: Master) -> None:
     if plan.creates:
-        print(f"\n■ {REGISTER_SHEET}シート（作成 {len(plan.creates)} 件）")
+        errors = error_rows(plan, REGISTER_SHEET)
+        note = error_note([cp.row_no for cp in plan.creates], errors)
+        print(f"\n■ {REGISTER_SHEET}シート（作成 {len(plan.creates)} 件{note}）")
         for cp in plan.creates:
             is_child = cp.parent_row is not None or cp.parent_key
             branch = "  └ " if is_child else ""
@@ -195,7 +217,7 @@ def print_plan(plan: Plan, master: Master) -> None:
                 parent = f"（親: {cp.parent_row}行目）"
             elif cp.parent_key:
                 parent = f"（親: {cp.parent_key}）"
-            print(f"  {pad(f'{cp.row_no}行目', 8)}{branch}{cp.summary}{parent}")
+            print(f"{row_mark(cp.row_no, errors)}{pad(f'{cp.row_no}行目', 8)}{branch}{cp.summary}{parent}")
             attrs = [
                 f"{cp.columns[k].header}={display(cp.columns[k], v, master)}"
                 for k, v in cp.values.items() if k != "summary"
@@ -209,13 +231,15 @@ def print_plan(plan: Plan, master: Master) -> None:
 
     if plan.updates:
         changed = [u for u in plan.updates if u.has_changes]
+        errors = error_rows(plan, UPDATE_SHEET)
+        note = error_note([u.row_no for u in plan.updates], errors)
         print(
             f"\n■ {UPDATE_SHEET}シート（更新 {len(changed)} 件 / "
-            f"変更なし {len(plan.updates) - len(changed)} 件）"
+            f"変更なし {len(plan.updates) - len(changed)} 件{note}）"
         )
         for up in plan.updates:
             mark = "" if up.has_changes else "  変更なし"
-            print(f"  {pad(f'{up.row_no}行目', 8)}{up.issue_key} {up.summary}{mark}")
+            print(f"{row_mark(up.row_no, errors)}{pad(f'{up.row_no}行目', 8)}{up.issue_key} {up.summary}{mark}")
             if up.parent_change:
                 kind, parent, old_key = up.parent_change
                 new = parent["issueKey"] if kind == "set" else "（なし）"

@@ -228,6 +228,7 @@ class TestOtherCommands:
         assert "山田太郎（yamada） / 佐藤花子（sato） / 山田太郎（yamada2）" in capsys.readouterr().out
 
 
+
 class TestReadWorkbook:
     def test_ファイルが無い(self, tmp_path):
         with pytest.raises(SheetError, match="見つかりません"):
@@ -265,6 +266,35 @@ class TestPlanDisplay:
         assert "└ 子（親: 2行目）" in out
         assert "状態=処理中（作成後に更新）" in out
 
+
+    def test_エラーのある行に印を付け_見出しにエラーの行数を出す(self, env, make_book, capsys):
+        """エラーのある行も予定に並ぶ。印が無いと、件名の空の行まで作られるように読める。"""
+        book = make_book({"登録": (REG, [
+            [None, None, "a", "タスク", "中"],
+            [None, None, None, "タスク", "中"],
+            [None, None, "c", "タスケ", "中"],
+        ])})
+        assert cli.main(["import", str(book), "--sheet", "登録"]) == cli.EXIT_FAILED
+        lines = capsys.readouterr().out.splitlines()
+        assert "■ 登録シート（作成 3 件（うちエラー 2 行））" in lines
+        assert any(line.startswith("  2行目   a") for line in lines)
+        assert any(line.startswith("✗ 3行目") for line in lines)
+        assert any(line.startswith("✗ 4行目   c") for line in lines)
+
+    def test_エラーが無ければ印も行数も出さない(self, env, make_book, capsys):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--sheet", "登録"]) == cli.EXIT_OK
+        out = capsys.readouterr().out
+        assert "■ 登録シート（作成 1 件）" in out and "✗" not in out
+
+    def test_更新シートにも印と行数を出す(self, env, fake, make_book, capsys):
+        fake.add("x")
+        fake.add("y")
+        book = make_book({"更新": (["課題キー", "親課題キー"], [["DEMO-1", "DEMO-1"], ["DEMO-2", None]])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_FAILED
+        out = capsys.readouterr().out
+        assert "■ 更新シート（更新 0 件 / 変更なし 2 件（うちエラー 1 行））" in out
+        assert "✗ 2行目   DEMO-1 x  変更なし" in out and "  3行目   DEMO-2 y  変更なし" in out
 
 class TestOutputNames:
     """日時は秒までなので、同じ秒に続けて実行すると名前が重なる。前のファイルを消さない。"""
