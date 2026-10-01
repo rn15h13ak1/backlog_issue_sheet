@@ -97,6 +97,21 @@ class TestDescription:
         assert plan.updates[0].changes == []
 
 
+class TestFullWidthToken:
+    """予定の一覧などを見て全角で書いても、半角と同じに読む。"""
+
+    def test_全角の削除で値を消す(self, plan_of, issue):
+        plan = plan_of(upd([["DEMO-1", None, None, "（削除）", "（削除）", None]]))
+        assert plan.ok, messages(plan)
+        assert [(c.column.header, c.new) for c in plan.updates[0].changes] == [("担当者", CLEAR), ("期限日", CLEAR)]
+
+    def test_全角の解除で親から外す(self, plan_of, fake):
+        parent = fake.add("親")
+        fake.add("子", parent=parent)
+        plan = plan_of(upd([["DEMO-2", "（解除）", None, None, None, None]]))
+        assert plan.ok, messages(plan)
+        assert plan.updates[0].parent_change == ("detach", None, "DEMO-1")
+
 class TestKeys:
     def test_課題キーが空(self, plan_of):
         plan = plan_of(upd([[None, None, "件名", None, None, None]]))

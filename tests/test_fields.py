@@ -6,10 +6,13 @@ import pytest
 
 from fields import (
     CLEAR,
+    CLEAR_TOKEN,
+    DETACH_TOKEN,
     STANDARD_BY_HEADER,
     ValueProblem,
     parse_date,
     parse_number,
+    is_token,
     parse_value,
     split_names,
     to_cell,
@@ -99,3 +102,23 @@ class TestNameTableLabels:
 
     def test_ログイン_ID_を持たない表は名前のまま(self):
         assert NameTable("種別", [{"id": 1, "name": "タスク"}]).labels() == ["タスク"]
+
+
+
+class TestToken:
+    """人手で書くと全角や空白が混ざりやすい。(削除) / (解除) の印として受け付ける。"""
+
+    @pytest.mark.parametrize("raw", ["(削除)", "（削除）", " (削除) ", "（ 削除 ）", "(削除）", "\u3000（削除）\u3000"])
+    def test_全角や空白が混ざっても削除の印(self, raw):
+        assert is_token(raw, CLEAR_TOKEN)
+
+    @pytest.mark.parametrize("raw", ["削除", "(削除済み)", "[削除]", None, 1])
+    def test_括弧の無いものや別の語は印ではない(self, raw):
+        assert not is_token(raw, CLEAR_TOKEN)
+
+    def test_解除も同じ(self):
+        assert is_token("（解除）", DETACH_TOKEN)
+        assert not is_token("（解除）", CLEAR_TOKEN)
+
+    def test_全角の削除で担当者を消す(self, master):
+        assert parse_value(COL["担当者"], "（削除）", master) is CLEAR

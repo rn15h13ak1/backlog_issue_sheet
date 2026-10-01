@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from master import (
@@ -41,6 +42,20 @@ CHILD_HEADER = "子課題"
 
 CLEAR_TOKEN = "(削除)"
 DETACH_TOKEN = "(解除)"
+
+
+def is_token(raw, token: str) -> bool:
+    """
+    セルの値が (削除) / (解除) の印か。
+
+    人手で書くと、日本語入力のまま全角の「（削除）」になったり、空白が混ざったりしやすい。
+    全角・半角の違い（NFKC で半角にそろえる）と空白は無視して比べる。
+    括弧の無い「削除」は受け付けない（担当者などの名前として読む）。
+    """
+    if not isinstance(raw, str):
+        return False
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", raw)) == token
+
 # 子課題列で「子にする」と読む値。これ以外の値はエラーにする。
 # 「×」「-」などを「子ではない」の意味で書く人がいるため、何でも受け付けると誤読する。
 CHILD_MARKS = {"○", "〇", "◯", "o", "O", "1", "true", "TRUE", "True", "yes", "y", "Y"}
@@ -234,7 +249,7 @@ def parse_value(col: Column, raw, master: Master):
     """
     if is_blank(raw):
         return None
-    if isinstance(raw, str) and raw.strip() == CLEAR_TOKEN:
+    if is_token(raw, CLEAR_TOKEN):
         return CLEAR
 
     try:
@@ -364,7 +379,8 @@ def display(col: Column, value, master: Master) -> str:
     if value is None:
         return "（なし）"
     if value is CLEAR:
-        return "（削除）"
+        # セルに書く印と同じ形で示す（全角で示すと、それをまねて書かれる）
+        return CLEAR_TOKEN
     if col.kind == "name":
         return _name_of(col, value, master)
     if col.kind == "names":

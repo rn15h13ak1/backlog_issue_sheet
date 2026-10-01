@@ -389,6 +389,13 @@ class TestPlanDisplay:
         assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_FAILED
         assert "誤りで一覧に載らない" not in capsys.readouterr().out
 
+    def test_値を消す変更はセルに書く印と同じ形で示す(self, env, fake, make_book, capsys):
+        """全角の「（削除）」で示すと、それをまねて書かれる。"""
+        fake.add("x", assigneeId=10)
+        book = make_book({"更新": (["課題キー", "担当者"], [["DEMO-1", "（削除）"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_OK
+        assert "担当者: 山田太郎 → (削除)" in capsys.readouterr().out
+
 class TestOutputNames:
     """日時は秒までなので、同じ秒に続けて実行すると名前が重なる。前のファイルを消さない。"""
 

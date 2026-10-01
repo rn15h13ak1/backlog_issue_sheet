@@ -32,6 +32,7 @@ from fields import (
     column_for_header,
     current_value,
     is_blank,
+    is_token,
     normalize_text,
     parse_value,
 )
@@ -330,7 +331,7 @@ def plan_register(sheet: SheetData, master: Master, issues: IssueCache, plan: Pl
         parent_key = None
         parent_raw = structure.get(PARENT_HEADER)
         if not is_blank(parent_raw):
-            if cell_text(parent_raw).strip() == DETACH_TOKEN:
+            if is_token(cell_text(parent_raw), DETACH_TOKEN):
                 problems.append(Problem(
                     sheet.name, row.row_no, PARENT_HEADER,
                     f"{DETACH_TOKEN} は{UPDATE_SHEET}シートでだけ使えます",
@@ -472,8 +473,7 @@ def plan_update(sheet: SheetData, master: Master, issues: IssueCache, plan: Plan
         parent_raw = structure.get(PARENT_HEADER)
         current_parent_id = issue.get("parentIssueId")
         if not is_blank(parent_raw):
-            text = cell_text(parent_raw).strip()
-            if text == DETACH_TOKEN:
+            if is_token(cell_text(parent_raw), DETACH_TOKEN):
                 if current_parent_id:
                     up.parent_change = ("detach", None, issues.key_of_id(current_parent_id))
             else:
