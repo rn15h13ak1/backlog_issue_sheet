@@ -295,3 +295,7 @@ python scripts/make_default_template.py
 ## 変更履歴
 
 [CHANGELOG.md](CHANGELOG.md) を参照してください。
+
+## ライセンス
+
+MIT License。全文は [LICENSE](LICENSE) にあります。

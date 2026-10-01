@@ -1,4 +1,5 @@
 [build-system]
+# license / license-files を SPDX 文字列で書くには 77 以降が要る（PEP 639）
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
@@ -7,6 +8,8 @@ name = "backlog-issue-sheet"
 version = "0.1.0"
 description = "Excel の「登録」「更新」シートから Backlog の課題を作成・更新し、Excel に書き出す CLI ツール"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 
 dependencies = [
     "openpyxl>=3.1",
