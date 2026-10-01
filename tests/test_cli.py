@@ -74,6 +74,23 @@ class TestConfig:
         # 1 行目はファイルのパス（テスト名を含む）なので、問題を並べた 2 行目以降を見る
         assert str(e.value).splitlines()[1:] == ["  backlog.space_host が例のままです"]
 
+    def test_設定項目の書き間違いに似た項目を示す(self, tmp_path):
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG.replace("project_key", "projet_key") + "output: out\n", encoding="utf-8")
+        with pytest.raises(cli.ConfigError) as e:
+            cli.load_config(path)
+        # 1 行目はファイルのパス（テスト名を含む）なので、問題を並べた 2 行目以降を見る
+        problems = str(e.value).splitlines()[1:]
+        assert "  未知の項目: output。もしかして: 「output_dir」" in problems
+        assert any(p.startswith("  未知の項目: backlog.projet_key。もしかして: 「project_key」") for p in problems)
+
+    def test_似た項目が無ければ示さない(self, tmp_path):
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + "  timeout: 30\n", encoding="utf-8")
+        with pytest.raises(cli.ConfigError) as e:
+            cli.load_config(path)
+        assert str(e.value).splitlines()[1:] == ["  未知の項目: backlog.timeout"]
+
     def test_例のままのホストはエラー(self, tmp_path):
         path = tmp_path / "c.yaml"
         path.write_text(CONFIG.replace("example.backlog.com", "yourcompany.backlog.com"), encoding="utf-8")

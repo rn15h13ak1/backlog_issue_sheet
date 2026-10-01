@@ -38,7 +38,7 @@ from fields import (
     all_columns,
     display,
 )
-from master import CF_TYPE_NAMES, Master
+from master import CF_TYPE_NAMES, Master, suggest
 from planner import Plan, build_plan
 from sheet_io import Book, SheetError, read_workbook, unique_stamp, write_workbook
 
@@ -80,6 +80,12 @@ def find_config(explicit: str | None) -> Path:
     )
 
 
+def _unknown_key(key: str, allowed: set[str], prefix: str = "") -> str:
+    """知らない設定項目の文。書き間違いなら、似た項目を「もしかして」で示す。"""
+    hint = suggest(key, sorted(allowed))
+    return f"未知の項目: {prefix}{key}" + (f"。{hint}" if hint else "")
+
+
 def load_config(path: Path) -> dict:
     try:
         config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -88,12 +94,15 @@ def load_config(path: Path) -> dict:
     if not isinstance(config, dict):
         raise ConfigError(f"設定ファイルの形が不正です: {path}")
 
-    problems = [f"未知の項目: {k}" for k in config if k not in ALLOWED_KEYS]
+    problems = [_unknown_key(str(k), ALLOWED_KEYS) for k in config if k not in ALLOWED_KEYS]
     backlog = config.get("backlog")
     if not isinstance(backlog, dict):
         problems.append("backlog の節がありません")
         backlog = {}
-    problems += [f"未知の項目: backlog.{k}" for k in backlog if k not in ALLOWED_BACKLOG_KEYS]
+    problems += [
+        _unknown_key(str(k), ALLOWED_BACKLOG_KEYS, prefix="backlog.")
+        for k in backlog if k not in ALLOWED_BACKLOG_KEYS
+    ]
     for required in ("space_host", "project_key"):
         if not backlog.get(required):
             problems.append(f"backlog.{required} が空です")
