@@ -1,0 +1,50 @@
+# OS / エディタ
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+*.swp
+*~
+
+# mac-watcher トリガー・ログ
+.build-trigger
+.build-output.log
+.git-trigger
+.git-output.log
+.github-trigger
+
+# 資格情報
+.env
+.env.*
+secrets.yaml
+credentials*
+*.pem
+*.key
+*.local.yaml
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*.ppk
+known_hosts
+
+# 設定ファイル（接続先を含むため、環境ごとに作る）
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 取り込む Excel・出力（業務の内容を含むため）
+*.xlsx
+*.xlsm
+~$*
+output/
+# 同梱のひな形は追跡する（業務の内容を含まず、scripts/make_default_template.py で作る）
+!templates/課題シート.xlsx

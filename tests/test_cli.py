@@ -1,0 +1,172 @@
+"""CLI（設定・API キー・サブコマンドの通し）"""
+
+import pytest
+
+import backlog_issue_sheet as cli
+from sheet_io import SheetError, read_workbook
+
+CONFIG = """
+backlog:
+  space_host: "example.backlog.com"
+  project_key: "DEMO"
+"""
+
+REG = ["親課題キー", "子課題", "件名", "種別", "優先度"]
+
+
+@pytest.fixture
+def env(tmp_path, monkeypatch, fake):
+    """設定ファイル・API キー・偽のクライアントを用意して、作業ディレクトリを移す。"""
+    (tmp_path / "config.yaml").write_text(CONFIG, encoding="utf-8")
+    monkeypatch.setenv(cli.API_KEY_ENV, "dummy")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "make_client", lambda config, key, debug: fake)
+    return tmp_path
+
+
+class TestConfig:
+    def test_API_キーを設定ファイルに書くとエラー(self, tmp_path):
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + '  api_key: "x"\n', encoding="utf-8")
+        with pytest.raises(cli.ConfigError, match="環境変数"):
+            cli.load_config(path)
+
+    def test_例のままのホストはエラー(self, tmp_path):
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG.replace("example.backlog.com", "yourcompany.backlog.com"), encoding="utf-8")
+        with pytest.raises(cli.ConfigError, match="例のまま"):
+            cli.load_config(path)
+
+    def test_未知の項目はエラー(self, tmp_path):
+        path = tmp_path / "c.yaml"
+        path.write_text(CONFIG + "extra: 1\n", encoding="utf-8")
+        with pytest.raises(cli.ConfigError, match="未知の項目: extra"):
+            cli.load_config(path)
+
+    def test_API_キーは_env_ファイルからも読む(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(cli.API_KEY_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".env").write_text(f'# memo\nexport {cli.API_KEY_ENV}="abc"\n', encoding="utf-8")
+        assert cli.find_api_key(tmp_path / "config.yaml") == "abc"
+
+    def test_環境変数を優先する(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(cli.API_KEY_ENV, "from-env")
+        (tmp_path / ".env").write_text(f"{cli.API_KEY_ENV}=from-file\n", encoding="utf-8")
+        assert cli.find_api_key(tmp_path / "config.yaml") == "from-env"
+
+    def test_API_キーが無ければエラー(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(cli.API_KEY_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(cli.ConfigError, match="API キーがありません"):
+            cli.find_api_key(tmp_path / "config.yaml")
+
+    def test_設定ファイルが無ければ終了コード2(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(cli, "TOOL_DIR", tmp_path)
+        assert cli.main(["master"]) == cli.EXIT_USAGE
+        assert "config.yaml が見つかりません" in capsys.readouterr().err
+
+
+class TestImport:
+    def test_ドライランでは送らない(self, env, fake, make_book, capsys):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book)]) == cli.EXIT_OK
+        assert fake.calls == []
+        assert "ドライラン" in capsys.readouterr().out
+
+    def test_エラーがあれば終了コード1で何も送らない(self, env, fake, make_book, capsys):
+        book = make_book({"登録": (REG, [[None, "○", "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_FAILED
+        assert fake.calls == []
+        assert "エラー（1 件）" in capsys.readouterr().out
+
+    def test_実行すると実行ログと結果のファイルを出す(self, env, fake, make_book, capsys):
+        book = make_book({"登録": (REG, [
+            [None, None, "親", "タスク", "中"],
+            [None, "○", "子", "タスク", "中"],
+        ])})
+        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_OK
+        assert len(fake.calls) == 2
+        out = env / "output"
+        logs = list(out.glob("run_*.csv"))
+        results = list(out.glob("結果_*.xlsx"))
+        assert len(logs) == 1 and len(results) == 1
+
+        # 結果のファイルは更新シートの書式で、そのまま取り込みに戻せる
+        sheets = read_workbook(results[0])
+        assert list(sheets) == ["更新"]
+        rows = [[r.values[1], r.values[2]] for r in sheets["更新"].rows]
+        assert rows == [["DEMO-1", None], ["DEMO-2", "DEMO-1"]]
+
+    def test_対話できなければ確認なしには送らない(self, env, fake, make_book, monkeypatch):
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--execute"]) == cli.EXIT_OK
+        assert fake.calls == []
+
+    def test_失敗があれば終了コード1(self, env, fake, make_book):
+        fake.fail_create_matching = "a"
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_FAILED
+
+    def test_limit_は1以上(self, env, make_book):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--limit", "0"]) == cli.EXIT_USAGE
+
+
+class TestOtherCommands:
+    def test_template(self, env):
+        assert cli.main(["template", "-o", "t.xlsx"]) == cli.EXIT_OK
+        assert (env / "t.xlsx").is_file()
+
+    def test_export(self, env, fake):
+        fake.add("x")
+        assert cli.main(["export", "-o", "e.xlsx"]) == cli.EXIT_OK
+        assert list(read_workbook(env / "e.xlsx")) == ["更新"]
+
+    def test_export_の名前の誤りは終了コード2(self, env, capsys):
+        assert cli.main(["export", "--status", "完了済み"]) == cli.EXIT_USAGE
+        assert "もしかして" in capsys.readouterr().err
+
+    def test_master(self, env, capsys):
+        assert cli.main(["master"]) == cli.EXIT_OK
+        out = capsys.readouterr().out
+        assert "山田太郎" in out and "区分  [単一リスト]" in out
+
+
+class TestReadWorkbook:
+    def test_ファイルが無い(self, tmp_path):
+        with pytest.raises(SheetError, match="見つかりません"):
+            read_workbook(tmp_path / "none.xlsx")
+
+    def test_xls_は読めない(self, tmp_path):
+        path = tmp_path / "a.xls"
+        path.write_bytes(b"")
+        with pytest.raises(SheetError, match="xlsx / xlsm 以外"):
+            read_workbook(path)
+
+    def test_どちらのシートも無い(self, make_book):
+        with pytest.raises(SheetError, match="Sheet"):
+            read_workbook(make_book({"Sheet": (["件名"], [["a"]])}))
+
+
+class TestPlanDisplay:
+    def test_更新の差分を旧と新で示す(self, env, fake, make_book, capsys):
+        p = fake.add("親")
+        fake.add("x", assigneeId=10)
+        book = make_book({"更新": (["課題キー", "親課題キー", "担当者"], [["DEMO-2", "DEMO-1", "佐藤花子"]])})
+        assert cli.main(["import", str(book)]) == cli.EXIT_OK
+        out = capsys.readouterr().out
+        assert "親課題キー: （なし） → DEMO-1" in out
+        assert "担当者: 山田太郎 → 佐藤花子" in out
+        assert "更新 1 件 / 変更なし 0 件" in out
+
+    def test_作成は親子をツリーで示し_作成後の更新も示す(self, env, make_book, capsys):
+        book = make_book({"登録": (REG + ["状態"], [
+            [None, None, "親", "タスク", "中", None],
+            [None, "○", "子", "タスク", "中", "処理中"],
+        ])})
+        cli.main(["import", str(book)])
+        out = capsys.readouterr().out
+        assert "└ 子（親: 2行目）" in out
+        assert "状態=処理中（作成後に更新）" in out

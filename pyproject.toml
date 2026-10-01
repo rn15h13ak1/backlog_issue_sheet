@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backlog-issue-sheet"
+version = "0.1.0"
+description = "Excel の「登録」「更新」シートから Backlog の課題を作成・更新し、Excel に書き出す CLI ツール"
+requires-python = ">=3.10"
+
+dependencies = [
+    "openpyxl>=3.1",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+backlog-issue-sheet = "backlog_issue_sheet:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=4.0"]
+
+# モジュールがリポジトリ直下に並ぶ構成（flat-layout）のため、対象を明示する。
+# 自動検出に任せると「トップレベルモジュールが複数ある」としてビルドが失敗する。
+[tool.setuptools]
+py-modules = [
+    "backlog_issue_sheet",
+    "backlog_client",
+    "master",
+    "fields",
+    "sheet_io",
+    "planner",
+    "executor",
+    "exporter",
+    "menu",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+omit = ["tests/*"]
+branch = true

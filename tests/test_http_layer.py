@@ -1,0 +1,363 @@
+"""
+BacklogClient の HTTP 層のテスト
+================================
+urlopen を差し替えて、実際に送信される URL とボディを検証する。
+
+リクエストボディの組み立ては過去に2回バグが出ている:
+  1181c0b POST/PATCH ボディの [] をパーセントエンコードしていた
+  ea2c28e typeId 5/8 を [] 付き配列形式で送信していた
+いずれも Backlog 側がパラメータを認識できず、原因の特定に時間がかかった。
+"""
+
+import json
+import ssl
+import urllib.parse
+import urllib.request
+
+import pytest
+
+from backlog_client import BacklogAPIError, BacklogClient
+
+
+@pytest.fixture
+def client():
+    return BacklogClient("example.backlog.com", "key/with+chars")
+
+
+@pytest.fixture
+def captured(monkeypatch):
+    """
+    urlopen を差し替えて送信内容を記録する。
+
+    captured.requests に urllib.request.Request が順に積まれる。
+    captured.responses に返す JSON を積んでおくと順に返す。
+    """
+    class Captured:
+        requests = []
+        responses = [{"id": 1}]
+        contexts = []          # urlopen に渡された ssl_context
+
+        @property
+        def last(self):
+            return self.requests[-1]
+
+        def body(self):
+            return self.last.data.decode("utf-8")
+
+        def params(self):
+            """ボディを {キー: [値, ...]} に分解する（[] はキー名の一部として保持）。"""
+            result = {}
+            for pair in self.body().split("&"):
+                key, _, value = pair.partition("=")
+                result.setdefault(key, []).append(urllib.parse.unquote_plus(value))
+            return result
+
+        def query(self):
+            return urllib.parse.parse_qs(urllib.parse.urlparse(self.last.full_url).query)
+
+    cap = Captured()
+    cap.requests = []
+    cap.contexts = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        cap.requests.append(req)
+        cap.contexts.append(context)
+        payload = cap.responses[min(len(cap.requests) - 1, len(cap.responses) - 1)]
+
+        class _Res:
+            def __enter__(self_inner): return self_inner
+            def __exit__(self_inner, *a): return False
+            def read(self_inner): return json.dumps(payload).encode("utf-8")
+
+        return _Res()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    return cap
+
+
+# ------------------------------------------------------------------
+# URL の組み立て
+# ------------------------------------------------------------------
+
+class TestUrl:
+    def test_GET_に_apiKey_が付く(self, client, captured):
+        client._get("/issues", {"count": 100})
+        assert captured.query()["apiKey"] == ["key/with+chars"]
+
+    def test_apiKey_の記号がエスケープされる(self, client, captured):
+        """
+        + はエスケープしないとスペースとして解釈される。
+        / はクエリ文字列の値として正当なためエスケープされない（RFC 3986）。
+        """
+        client._get("/issues")
+
+        assert "%2B" in captured.last.full_url          # + がエスケープ済み
+        assert captured.query()["apiKey"] == ["key/with+chars"]  # 復号すると元に戻る
+
+    def test_リスト値は角括弧付きで展開される(self, client, captured):
+        client._get("/issues", {"projectId": [1, 2]})
+        assert captured.query()["projectId[]"] == ["1", "2"]
+
+    def test_base_path_が_URL_に反映される(self, captured):
+        c = BacklogClient("example.com", "k", base_path="/backlog")
+        c._get("/issues")
+        assert captured.last.full_url.startswith("https://example.com/backlog/api/v2/issues")
+
+
+# ------------------------------------------------------------------
+# リクエストボディ（過去にバグが出た箇所）
+# ------------------------------------------------------------------
+
+class TestRequestBody:
+    def test_POST_のメソッドとヘッダー(self, client, captured):
+        client._post("/issues", {"summary": "件名"})
+        assert captured.last.get_method() == "POST"
+        assert captured.last.headers["Content-type"] == "application/x-www-form-urlencoded"
+
+    def test_PATCH_のメソッド(self, client, captured):
+        client._patch("/issues/DEMO-1", {"summary": "件名"})
+        assert captured.last.get_method() == "PATCH"
+
+    def test_角括弧はパーセントエンコードしない(self, client, captured):
+        """
+        キー名の [] を %5B%5D にすると Backlog がリスト表記を認識できない。
+        （1181c0b で修正した退行）
+        """
+        client._post("/issues", {"customField_6": [61, 62]})
+
+        assert "customField_6[]=61" in captured.body()
+        assert "%5B%5D" not in captured.body()
+
+    def test_単一値には角括弧を付けない(self, client, captured):
+        """
+        typeId 5/8（単一選択）は [] なしで送る必要がある。
+        （ea2c28e で修正した退行）
+        """
+        client._post("/issues", {"customField_5": 51})
+
+        assert "customField_5=51" in captured.body()
+        assert "customField_5[]" not in captured.body()
+
+    def test_値はパーセントエンコードされる(self, client, captured):
+        client._post("/issues", {"summary": "件名 & 記号=あり"})
+
+        assert captured.params()["summary"] == ["件名 & 記号=あり"]
+        assert "&" not in captured.body().split("summary=")[1].split("&")[0].replace("%26", "")
+
+    def test_日本語が_UTF8_で送られる(self, client, captured):
+        client._post("/issues", {"summary": "日本語"})
+        assert urllib.parse.quote_plus("日本語") in captured.body()
+
+    def test_改行を含む本文も送れる(self, client, captured):
+        client._post("/issues", {"description": "1行目\n2行目"})
+        assert captured.params()["description"] == ["1行目\n2行目"]
+
+    def test_複数パラメータが_アンパサンド_で連結される(self, client, captured):
+        client._post("/issues", {"projectId": 42, "summary": "件名", "issueTypeId": 1})
+        params = captured.params()
+        assert params["projectId"] == ["42"]
+        assert params["issueTypeId"] == ["1"]
+
+
+# ------------------------------------------------------------------
+# 課題の取得
+# ------------------------------------------------------------------
+
+class TestGetIssue:
+    def test_存在しない課題は_None(self, client, monkeypatch):
+        def not_found(req, timeout=None, context=None):
+            import io
+            import urllib.error
+            raise urllib.error.HTTPError(
+                "url", 404, "Not Found", {}, io.BytesIO(b'{"errors":[]}')
+            )
+
+        monkeypatch.setattr(urllib.request, "urlopen", not_found)
+        assert client.get_issue("DEMO-999") is None
+
+    def test_404_以外はエラーとして送出される(self, client, monkeypatch):
+        def server_error(req, timeout=None, context=None):
+            import io
+            import urllib.error
+            raise urllib.error.HTTPError(
+                "url", 403, "Forbidden", {}, io.BytesIO(b'{"errors":[]}')
+            )
+
+        monkeypatch.setattr(urllib.request, "urlopen", server_error)
+        with pytest.raises(BacklogAPIError):
+            client.get_issue("DEMO-1")
+
+    def test_issueKey_は_URL_エンコードされる(self, client, captured):
+        client.get_issue("DEMO-1")
+        assert "/issues/DEMO-1" in captured.last.full_url
+
+
+class TestSslVerify:
+    """
+    TLS 証明書の検証。
+
+    既定は検証する。オンプレ版のために `ssl_verify: false` で外せるが、
+    これは明示したときだけであること。
+
+    既定を false 側へ倒す変更は、テストが無いと素通りする。カバレッジでも
+    気づけない（検証を外す枝が実行されるぶん、むしろ数字は上がる）。
+    """
+
+    def test_既定では検証する(self, client, captured):
+        assert client.ssl_context is None          # urlopen の既定＝検証あり
+        client.get_issue("DEMO-1")
+        assert captured.contexts == [None]
+
+    def test_ssl_verify_を_false_にしたときだけ検証を外す(self, captured):
+        client = BacklogClient("example.backlog.com", "k", ssl_verify=False)
+        client.get_issue("DEMO-1")
+
+        ctx = captured.contexts[-1]
+        assert ctx is not None
+        assert ctx.verify_mode is ssl.CERT_NONE
+        assert ctx.check_hostname is False
+
+    def test_ssl_verify_を_true_にしても検証が外れない(self, captured):
+        client = BacklogClient("example.backlog.com", "k", ssl_verify=True)
+        client.get_issue("DEMO-1")
+        assert captured.contexts[-1] is None
+
+
+class TestGetIssuesPagination:
+    """1リクエスト 100 件の上限を超えても全件取得すること。"""
+
+    def test_100件未満なら1回で終わる(self, client, captured):
+        captured.responses = [[{"issueKey": f"DEMO-{i}"} for i in range(30)]]
+        issues = client.get_issues(42)
+
+        assert len(issues) == 30
+        assert len(captured.requests) == 1
+
+    def test_ちょうど100件なら次ページも取りにいく(self, client, captured):
+        captured.responses = [
+            [{"issueKey": f"DEMO-{i}"} for i in range(100)],
+            [{"issueKey": "DEMO-100"}],
+        ]
+        issues = client.get_issues(42)
+
+        assert len(issues) == 101
+        assert len(captured.requests) == 2
+
+    def test_offset_が繰り上がる(self, client, captured):
+        captured.responses = [
+            [{"issueKey": f"DEMO-{i}"} for i in range(100)],
+            [],
+        ]
+        client.get_issues(42)
+
+        offsets = [
+            urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["offset"][0]
+            for r in captured.requests
+        ]
+        assert offsets == ["0", "100"]
+
+    def test_空の応答で打ち切る(self, client, captured):
+        captured.responses = [[]]
+        assert client.get_issues(42) == []
+        assert len(captured.requests) == 1
+
+
+# ------------------------------------------------------------------
+# マスターデータ取得
+# ------------------------------------------------------------------
+
+class TestMasterEndpoints:
+    @pytest.mark.parametrize("call,expected", [
+        (lambda c: c.get_project("DEMO"),        "/projects/DEMO"),
+        (lambda c: c.get_issue_types("DEMO"),    "/projects/DEMO/issueTypes"),
+        (lambda c: c.get_custom_fields("DEMO"),  "/projects/DEMO/customFields"),
+        (lambda c: c.get_statuses("DEMO"),       "/projects/DEMO/statuses"),
+        (lambda c: c.get_project_users("DEMO"),  "/projects/DEMO/users"),
+        (lambda c: c.get_priorities(),           "/priorities"),
+    ])
+    def test_正しいエンドポイントを呼ぶ(self, client, captured, call, expected):
+        call(client)
+        assert expected in captured.last.full_url
+
+
+# ------------------------------------------------------------------
+# --debug の出力
+# ------------------------------------------------------------------
+
+class TestDebugOutput:
+    """
+    --debug はカスタム属性が反映されたかを確かめるための機能で、README でも
+    そう案内している。出力そのものに検証が無かった。
+
+    とくに GET は、クエリから apiKey を除いてから出している。この除去が
+    落ちると API キーが stderr に出て、貼り付けたログから漏れる。
+    """
+
+    KEY = "key/with+chars"
+
+    @pytest.fixture
+    def debug_client(self):
+        return BacklogClient("example.backlog.com", self.KEY, debug=True)
+
+    def _err(self, capsys):
+        return capsys.readouterr().err
+
+    def test_debug_を付けなければ何も出ない(self, client, captured, capsys):
+        client.get_issue("DEMO-1")
+        client.create_issue({"summary": "件名"})
+        assert self._err(capsys) == ""
+
+    def test_GET_の出力に_apiKey_が含まれない(self, debug_client, captured, capsys):
+        debug_client.get_issues(42)
+
+        err = self._err(capsys)
+        assert "[DEBUG GET] /issues" in err
+        assert "apiKey" not in err
+        assert self.KEY not in err
+        assert urllib.parse.quote(self.KEY, safe="") not in err
+
+    def test_GET_の他のパラメータは出る(self, debug_client, captured, capsys):
+        debug_client.get_issues(42)
+
+        err = self._err(capsys)
+        assert "projectId" in err and "count=100" in err
+
+    def test_POST_はボディの項目を出す(self, debug_client, captured, capsys):
+        debug_client.create_issue({"summary": "件名", "categoryId": [1, 2]})
+
+        err = self._err(capsys)
+        assert "[DEBUG POST] /issues" in err
+        assert "summary=件名" in err
+        assert "categoryId[]=1" in err and "categoryId[]=2" in err
+        assert self.KEY not in err            # apiKey は URL 側。ボディには出ない
+
+    def test_PATCH_はボディの項目を出す(self, debug_client, captured, capsys):
+        debug_client.update_issue("DEMO-1", {"summary": "新しい件名"})
+
+        err = self._err(capsys)
+        assert "[DEBUG PATCH] /issues/DEMO-1" in err
+        assert "summary=新しい件名" in err
+        assert self.KEY not in err
+
+    def test_レスポンスのカスタム属性を出す(self, debug_client, captured, capsys):
+        captured.responses = [{
+            "id": 1,
+            "customFields": [{"id": 7, "name": "分類", "value": "不具合"}],
+        }]
+        debug_client.create_issue({"summary": "件名"})
+
+        err = self._err(capsys)
+        assert "[DEBUG POST response] customFields:" in err
+        assert "id=7" in err and "'分類'" in err and "'不具合'" in err
+
+    def test_カスタム属性が空ならその旨を出す(self, debug_client, captured, capsys):
+        captured.responses = [{"id": 1, "customFields": []}]
+        debug_client.create_issue({"summary": "件名"})
+
+        assert "customFields: (なし または 空)" in self._err(capsys)
+
+    def test_カスタム属性のキーが無い場合も落ちない(self, debug_client, captured, capsys):
+        captured.responses = [{"id": 1}]
+        debug_client.create_issue({"summary": "件名"})
+
+        assert "customFields: (なし または 空)" in self._err(capsys)
