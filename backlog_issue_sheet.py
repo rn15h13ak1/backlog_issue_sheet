@@ -43,6 +43,8 @@ from planner import Plan, build_plan
 from sheet_io import SheetError, read_workbook, timestamp, write_workbook
 
 TOOL_DIR = Path(__file__).resolve().parent
+# メニュー（menu.py）の「取り込み（実行）」の表示名。ドライランの案内に使う
+MENU_EXECUTE_LABEL = "取り込み（実行）"
 API_KEY_ENV = "BACKLOG_API_KEY"
 
 EXIT_OK = 0
@@ -305,7 +307,8 @@ def cmd_import(args) -> int:
         print("\n送信するものはありません。")
         return EXIT_OK
     if not args.execute:
-        print(f"\nドライランです（送信予定 {n_actions} 件）。Backlog に反映するには --execute を付けてください。")
+        how = f"メニューの「{MENU_EXECUTE_LABEL}」を選んでください" if args.from_menu else "--execute を付けてください"
+        print(f"\nドライランです（送信予定 {n_actions} 件）。Backlog に反映するには{how}。")
         return EXIT_OK
 
     limit_note = f"（--limit {args.limit} のため先頭 {min(args.limit, n_actions)} 件）" if args.limit else ""
@@ -382,6 +385,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true", help="実際に送信する")
     p.add_argument("--yes", action="store_true", help="確認を省く（--execute と一緒に使う）")
     p.add_argument("--limit", type=int, help="先頭から N 件だけ送信する（試しに少しだけ反映するとき）")
+    # メニューから呼ばれたとき、案内をメニューの操作で示す。利用者が打つものではないため隠す
+    p.add_argument("--from-menu", action="store_true", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("export", parents=[common], help="Backlog の課題を Excel に書き出す")

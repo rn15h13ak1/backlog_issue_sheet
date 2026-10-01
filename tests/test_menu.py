@@ -4,6 +4,7 @@ import builtins
 
 import pytest
 
+import backlog_issue_sheet as cli
 import menu
 
 
@@ -31,7 +32,7 @@ def test_前回のファイルを既定にする(monkeypatch, tmp_path):
     feed(monkeypatch, [str(book)])
     menu.build_args("dry", "c.yaml", history)
     feed(monkeypatch, [""])
-    assert menu.build_args("dry", "c.yaml", history) == ["import", str(book), "--config", "c.yaml"]
+    assert menu.build_args("dry", "c.yaml", history) == ["import", str(book), "--config", "c.yaml", "--from-menu"]
 
 
 def test_無いファイルは聞き直す(monkeypatch, tmp_path):
@@ -51,3 +52,18 @@ def test_件数に数以外を入れると戻る(monkeypatch, tmp_path):
     book.write_bytes(b"")
     feed(monkeypatch, [str(book), "abc"])
     assert menu.build_args("execute", None, {}) is None
+
+
+def test_件数の欄は空_Enter_が全件だと案内する(monkeypatch, tmp_path):
+    """空 Enter は全件を送る。「戻る」と案内すると、取りやめるつもりで送ってしまう。"""
+    book = tmp_path / "a.xlsx"
+    book.write_bytes(b"")
+    prompts = []
+    answers = iter([str(book), ""])
+    monkeypatch.setattr(builtins, "input", lambda prompt="": prompts.append(prompt) or next(answers))
+    assert "--limit" not in menu.build_args("execute", None, {})
+    assert prompts[1] == "  先頭から何件だけ送るか（空 Enter で全件）: "
+
+
+def test_ドライランの案内に使う表示名がメニューにある():
+    assert cli.MENU_EXECUTE_LABEL in [label for key, label, _ in menu.ACTIONS if key == "execute"]
