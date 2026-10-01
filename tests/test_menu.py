@@ -21,18 +21,20 @@ def no_history(monkeypatch, tmp_path):
 def test_実行は_execute_を付け_件数も渡せる(monkeypatch, tmp_path):
     book = tmp_path / "a.xlsx"
     book.write_bytes(b"")
-    feed(monkeypatch, [f'"{book}"', "1", "3"])
-    assert menu.build_args("execute", None, {}) == ["import", str(book), "--sheet", "登録", "--execute", "--limit", "3"]
+    feed(monkeypatch, [f'"{book}"', "3"])
+    assert menu.build_args("register_execute", None, {}) == [
+        "import", str(book), "--sheet", "登録", "--execute", "--limit", "3",
+    ]
 
 
 def test_前回のファイルを既定にする(monkeypatch, tmp_path):
     book = tmp_path / "a.xlsx"
     book.write_bytes(b"")
     history = {}
-    feed(monkeypatch, [str(book), "1"])
-    menu.build_args("dry", "c.yaml", history)
-    feed(monkeypatch, ["", "2"])
-    assert menu.build_args("dry", "c.yaml", history) == [
+    feed(monkeypatch, [str(book)])
+    menu.build_args("register_dry", "c.yaml", history)
+    feed(monkeypatch, [""])
+    assert menu.build_args("update_dry", "c.yaml", history) == [
         "import", str(book), "--sheet", "更新", "--config", "c.yaml", "--from-menu",
     ]
 
@@ -40,8 +42,8 @@ def test_前回のファイルを既定にする(monkeypatch, tmp_path):
 def test_無いファイルは聞き直す(monkeypatch, tmp_path):
     book = tmp_path / "a.xlsx"
     book.write_bytes(b"")
-    feed(monkeypatch, [str(tmp_path / "none.xlsx"), str(book), "1"])
-    assert menu.build_args("dry", None, {})[1] == str(book)
+    feed(monkeypatch, [str(tmp_path / "none.xlsx"), str(book)])
+    assert menu.build_args("register_dry", None, {})[1] == str(book)
 
 
 def test_書き出しで親を指定(monkeypatch):
@@ -52,8 +54,8 @@ def test_書き出しで親を指定(monkeypatch):
 def test_件数に数以外を入れると戻る(monkeypatch, tmp_path):
     book = tmp_path / "a.xlsx"
     book.write_bytes(b"")
-    feed(monkeypatch, [str(book), "1", "abc"])
-    assert menu.build_args("execute", None, {}) is None
+    feed(monkeypatch, [str(book), "abc"])
+    assert menu.build_args("register_execute", None, {}) is None
 
 
 def test_件数の欄は空_Enter_が全件だと案内する(monkeypatch, tmp_path):
@@ -61,14 +63,32 @@ def test_件数の欄は空_Enter_が全件だと案内する(monkeypatch, tmp_p
     book = tmp_path / "a.xlsx"
     book.write_bytes(b"")
     prompts = []
-    answers = iter([str(book), "1", ""])
+    answers = iter([str(book), ""])
     monkeypatch.setattr(builtins, "input", lambda prompt="": prompts.append(prompt) or next(answers))
-    assert "--limit" not in menu.build_args("execute", None, {})
+    assert "--limit" not in menu.build_args("update_execute", None, {})
     assert prompts[-1] == "  先頭から何件だけ送るか（空 Enter で全件）: "
 
 
 def test_ドライランの案内に使う表示名がメニューにある():
-    assert cli.MENU_EXECUTE_LABEL in [label for key, label, _ in menu.ACTIONS if key == "execute"]
+    labels = {key: label for key, label, _ in menu.ACTIONS}
+    for action, (sheet, execute) in menu.IMPORTS.items():
+        if execute:
+            assert labels[action] == cli.menu_execute_label(sheet)
+
+
+def test_登録と更新は最初のメニューで選び分ける(monkeypatch, tmp_path):
+    """途中でシートを選ばせると、確認と実行で別のシートを選ぶ取り違えが起きうる。"""
+    book = tmp_path / "a.xlsx"
+    book.write_bytes(b"")
+    expected = {
+        "register_dry": ["--sheet", "登録", "--from-menu"],
+        "register_execute": ["--sheet", "登録", "--execute"],
+        "update_dry": ["--sheet", "更新", "--from-menu"],
+        "update_execute": ["--sheet", "更新", "--execute"],
+    }
+    for action, tail in expected.items():
+        feed(monkeypatch, [str(book), ""])
+        assert menu.build_args(action, None, {}) == ["import", str(book), *tail]
 
 
 def test_使い方シートが案内するメニューの項目はメニューにある():
@@ -81,10 +101,3 @@ def test_使い方シートが案内するメニューの項目はメニュー�
     assert referred, "使い方シートがメニューの項目を案内していない"
     labels = [label for _, label, _ in menu.ACTIONS]
     assert [r for r in referred if r not in labels] == []
-
-
-def test_シートの選択で0なら戻る(monkeypatch, tmp_path):
-    book = tmp_path / "a.xlsx"
-    book.write_bytes(b"")
-    feed(monkeypatch, [str(book), "0"])
-    assert menu.build_args("dry", None, {}) is None

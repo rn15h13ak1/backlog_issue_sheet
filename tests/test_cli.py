@@ -123,13 +123,18 @@ class TestImport:
         assert fake.calls == []
         assert "OTHER 向け" in capsys.readouterr().out
 
-    def test_ドライランの案内はメニューから呼ばれたらメニューの操作で示す(self, env, make_book, capsys):
+    def test_ドライランの案内はメニューから呼ばれたらメニューの操作で示す(self, env, fake, make_book, capsys):
         book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
         assert cli.main(["import", str(book), "--sheet", "登録"]) == cli.EXIT_OK
         assert "--execute を付けてください" in capsys.readouterr().out
         assert cli.main(["import", str(book), "--sheet", "登録", "--from-menu"]) == cli.EXIT_OK
         out = capsys.readouterr().out
-        assert "メニューの「取り込み（実行）」を選んでください" in out and "--execute" not in out
+        assert "メニューの「登録（実行）」を選んでください" in out and "--execute" not in out
+
+        fake.add("x")
+        book = make_book({"更新": (["課題キー", "件名"], [["DEMO-1", "y"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新", "--from-menu"]) == cli.EXIT_OK
+        assert "メニューの「更新（実行）」を選んでください" in capsys.readouterr().out
 
 
 

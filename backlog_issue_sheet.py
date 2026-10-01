@@ -43,8 +43,6 @@ from planner import Plan, build_plan
 from sheet_io import Book, SheetError, read_workbook, unique_stamp, write_workbook
 
 TOOL_DIR = Path(__file__).resolve().parent
-# メニュー（menu.py）の「取り込み（実行）」の表示名。ドライランの案内に使う
-MENU_EXECUTE_LABEL = "取り込み（実行）"
 API_KEY_ENV = "BACKLOG_API_KEY"
 
 EXIT_OK = 0
@@ -229,6 +227,11 @@ def print_plan(plan: Plan, master: Master) -> None:
                 )
 
 
+def menu_execute_label(sheet: str) -> str:
+    """メニュー（menu.py）で、そのシートを実行する項目の表示名。ドライランの案内に使う。"""
+    return f"{sheet}（実行）"
+
+
 def ask(prompt: str, assume_yes: bool) -> bool:
     if assume_yes:
         print(f"{prompt} y（--yes 指定）")
@@ -331,7 +334,7 @@ def cmd_import(args) -> int:
         print("\n送信するものはありません。")
         return EXIT_OK
     if not args.execute:
-        how = f"メニューの「{MENU_EXECUTE_LABEL}」を選んでください" if args.from_menu else "--execute を付けてください"
+        how = f"メニューの「{menu_execute_label(args.sheet)}」を選んでください" if args.from_menu else "--execute を付けてください"
         print(f"\nドライランです（送信予定 {n_actions} 件）。Backlog に反映するには{how}。")
         return EXIT_OK
 

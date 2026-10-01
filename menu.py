@@ -30,8 +30,10 @@ EXIT_INTERRUPTED = 130
 
 ACTIONS = [
     ("template", "ひな形を作る", "登録・更新シートの空の Excel を作る（プルダウン付き）"),
-    ("dry", "取り込み（確認だけ）", "Excel の内容を検証し、作成・変更の予定を表示する"),
-    ("execute", "取り込み（実行）", "確認のうえで Backlog に反映する"),
+    ("register_dry", "登録（確認だけ）", "「登録」シートを検証し、作成する課題を表示する"),
+    ("register_execute", "登録（実行）", "確認のうえで「登録」シートの課題を Backlog に作る"),
+    ("update_dry", "更新（確認だけ）", "「更新」シートを検証し、変わる項目を表示する"),
+    ("update_execute", "更新（実行）", "確認のうえで「更新」シートの変更を Backlog に反映する"),
     ("export", "書き出し", "Backlog の課題を更新シートの書式で Excel に出す"),
     ("master", "使える名前の一覧", "種別・担当者・カスタム属性などの名前を表示する"),
 ]
@@ -105,13 +107,14 @@ def ask_excel(history: dict) -> str | None:
         print(f"  ※ ファイルが見つかりません: {path}")
 
 
-# 取り込むシート。もう一方のシートは読まないので、書いたまま残った行を送らない
-SHEETS = [("登録", "課題を新しく作る"), ("更新", "既存の課題を変更する")]
-
-
-def ask_sheet() -> str | None:
-    choice = print_menu("取り込むシート", [f"{name} ― {desc}" for name, desc in SHEETS])
-    return None if choice == 0 else SHEETS[choice - 1][0]
+# 取り込みの項目 → (読むシート, 実行するか)。もう一方のシートは読まないので、
+# 書いたまま残った行を送らない。登録と更新を最初のメニューで選び分ける
+IMPORTS = {
+    "register_dry": ("登録", False),
+    "register_execute": ("登録", True),
+    "update_dry": ("更新", False),
+    "update_execute": ("更新", True),
+}
 
 
 def build_args(action: str, config: str | None, history: dict) -> list[str] | None:
@@ -120,18 +123,16 @@ def build_args(action: str, config: str | None, history: dict) -> list[str] | No
         return ["template", *common]
     if action == "master":
         return ["master", *common]
-    if action in ("dry", "execute"):
+    if action in IMPORTS:
+        sheet, execute = IMPORTS[action]
         excel = ask_excel(history)
         if excel is None:
             return None
-        sheet = ask_sheet()
-        if sheet is None:
-            return None
         args = ["import", excel, "--sheet", sheet, *common]
-        if action == "dry":
+        if not execute:
             # 「--execute を付けて」の案内を、メニューの操作に置き換えてもらう
             args.append("--from-menu")
-        if action == "execute":
+        if execute:
             args.append("--execute")
             limit = input_text("先頭から何件だけ送るか", empty="全件")
             if limit:
