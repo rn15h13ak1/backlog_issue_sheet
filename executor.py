@@ -38,6 +38,7 @@ class Result:
     summary: str = ""              # 更新できた行は更新後の件名、それ以外は Backlog の今の件名
     message: str = ""
     issue: dict | None = None      # 作成・更新後の課題（結果の Excel に使う）
+    fatal: bool = False            # 認証・権限のエラーで失敗した（以降は送らない）
 
 
 class RunLog:
@@ -149,7 +150,9 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
         try:
             issue = client.create_issue(create_params(cp, project_id, parent_id))
         except BacklogAPIError as e:
-            emit(Result(REGISTER_SHEET, cp.row_no, FAILED, summary=cp.summary, message=_one_line(e)))
+            emit(Result(
+                REGISTER_SHEET, cp.row_no, FAILED, summary=cp.summary, message=_one_line(e), fatal=e.fatal,
+            ))
             if e.fatal:
                 aborted = "認証・権限のエラーで中止したため"
             continue
@@ -165,6 +168,7 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
                 # 課題は作成済み。失敗として数えるが、キーは残す（重複して作らないため）
                 result.outcome = FAILED
                 result.message = f"作成はできたが、状態・完了理由の更新に失敗: {_one_line(e)}"
+                result.fatal = e.fatal
                 if e.fatal:
                     aborted = "認証・権限のエラーで中止したため"
         emit(result)
@@ -186,7 +190,9 @@ def execute(plan: Plan, project_id: int, client, *, limit: int | None = None, lo
             emit(Result(UPDATE_SHEET, up.row_no, NO_CHANGE, up.issue_key, up.summary, message="Backlog 側で変更なしと判定"))
             continue
         except BacklogAPIError as e:
-            emit(Result(UPDATE_SHEET, up.row_no, FAILED, up.issue_key, up.summary, message=_one_line(e)))
+            emit(Result(
+                UPDATE_SHEET, up.row_no, FAILED, up.issue_key, up.summary, message=_one_line(e), fatal=e.fatal,
+            ))
             if e.fatal:
                 aborted = "認証・権限のエラーで中止したため"
             continue

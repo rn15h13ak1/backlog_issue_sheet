@@ -132,22 +132,27 @@ def read_dotenv(path: Path) -> dict[str, str]:
 
 
 def find_api_key(config_path: Path, config: dict | None = None) -> str:
+    return locate_api_key(config_path, config)[0]
+
+
+def locate_api_key(config_path: Path, config: dict | None = None) -> tuple[str, str]:
     """
-    環境変数、設定ファイルの backlog.api_key、設定ファイルと同じ場所の .env、
-    作業ディレクトリの .env の順に探す。
+    (API キー, どこから読んだか)。環境変数、設定ファイルの backlog.api_key、
+    設定ファイルと同じ場所の .env、作業ディレクトリの .env の順に探す。
 
     環境変数を先に見るのは、設定ファイルを書き換えずに差し替えられるようにするため
     （共通規約 C「設定ファイル」）。例の値のままの api_key は、書いていないものとみなす。
+    どこから読んだかは、認証・権限のエラーのときに、どこを直せばよいかを示すのに使う。
     """
     if os.environ.get(API_KEY_ENV):
-        return os.environ[API_KEY_ENV]
+        return os.environ[API_KEY_ENV], f"環境変数 {API_KEY_ENV}"
     in_config = str(((config or {}).get("backlog") or {}).get("api_key") or "").strip()
     if in_config and in_config != API_KEY_PLACEHOLDER:
-        return in_config
+        return in_config, f"設定ファイル {config_path} の backlog.api_key"
     for env_path in (config_path.parent / ".env", Path.cwd() / ".env"):
         value = read_dotenv(env_path).get(API_KEY_ENV)
         if value:
-            return value
+            return value, f"{env_path} の {API_KEY_ENV}"
     raise ConfigError(
         f"API キーがありません。環境変数 {API_KEY_ENV}、設定ファイルの backlog.api_key、"
         f"設定ファイルと同じ場所の .env（{API_KEY_ENV}=...）のどれかに書いてください"
@@ -296,10 +301,18 @@ def ask(prompt: str, assume_yes: bool) -> bool:
 # サブコマンド
 # ---------------------------------------------------------------------------
 
+def print_api_key_source(args) -> None:
+    """認証・権限のエラーのとき、今回どこの API キーを使ったかを示す。直す場所が分かるように。"""
+    source = getattr(args, "api_key_source", None)
+    if source:
+        print(f"  使った API キー: {source}", file=sys.stderr)
+
+
 def connect(args) -> tuple[dict, Path, BacklogClient, Master]:
     config_path = find_config(args.config)
     config = load_config(config_path)
-    client = make_client(config, find_api_key(config_path, config), args.debug)
+    api_key, args.api_key_source = locate_api_key(config_path, config)
+    client = make_client(config, api_key, args.debug)
     print(f"接続先: {config['backlog']['space_host']} / {config['backlog']['project_key']}")
     master = Master.load(client, config["backlog"]["project_key"])
     return config, config_path, client, master
@@ -404,6 +417,10 @@ def cmd_import(args) -> int:
     for r in results:
         counts[r.outcome] = counts.get(r.outcome, 0) + 1
     print("\n結果: " + " / ".join(f"{k} {v} 件" for k, v in counts.items()))
+    if any(r.fatal for r in results):
+        # 接続は通っても、課題の追加・編集の権限が無いと送る段階で 403 になる
+        print("認証・権限のエラーで中止しました。")
+        print_api_key_source(args)
     print(f"実行ログ: {log_path}")
 
     touched = [r.issue for r in results if r.issue]
@@ -502,6 +519,8 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     except BacklogAPIError as e:
         print(f"エラー: {e}", file=sys.stderr)
+        if e.fatal:
+            print_api_key_source(args)
         return EXIT_FAILED
     except KeyboardInterrupt:
         print("\n中断しました。", file=sys.stderr)
