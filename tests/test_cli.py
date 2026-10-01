@@ -296,6 +296,37 @@ class TestPlanDisplay:
         assert "■ 更新シート（更新 0 件 / 変更なし 2 件（うちエラー 1 行））" in out
         assert "✗ 2行目   DEMO-1 x  変更なし" in out and "  3行目   DEMO-2 y  変更なし" in out
 
+    def test_課題キーの誤りで一覧に載らない行を示す(self, env, fake, make_book, capsys):
+        """どの課題か決まらない行は一覧に載らず、見出しの件数にも入らない。"""
+        fake.add("x")
+        book = make_book({"更新": (["課題キー", "件名"], [
+            ["DEMO-1", "y"], [None, "a"], ["DEMO-99", "b"], ["DEMO-1", "c"],
+        ])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_FAILED
+        out = capsys.readouterr().out
+        assert "✗ ほかに、課題キーの誤りで一覧に載らない行が 3 行あります（3、4、5 行目）" in out
+
+    def test_すべての行が課題キーの誤りでも見出しと行を出す(self, env, make_book, capsys):
+        book = make_book({"更新": (["課題キー", "件名"], [["DEMO-99", "b"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_FAILED
+        out = capsys.readouterr().out
+        assert "■ 更新シート（更新 0 件 / 変更なし 0 件）" in out
+        assert "一覧に載らない行が 1 行あります（2 行目）" in out
+
+    def test_課題キーの誤りが無ければ案内しない(self, env, fake, make_book, capsys):
+        fake.add("x")
+        book = make_book({"更新": (["課題キー", "件名"], [["DEMO-1", "(削除)"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_FAILED
+        # 読み込みの行に出るファイルのパスにはテスト名が入る。テスト名に無い語句で確かめる
+        assert "誤りで一覧に載らない" not in capsys.readouterr().out
+
+    def test_見出しの誤りは一覧に載らない行に数えない(self, env, fake, make_book, capsys):
+        """見出しの誤りは 1 行目のエラー。データの行ではない。"""
+        fake.add("x")
+        book = make_book({"更新": (["課題キー", "担当"], [["DEMO-1", "a"]])})
+        assert cli.main(["import", str(book), "--sheet", "更新"]) == cli.EXIT_FAILED
+        assert "誤りで一覧に載らない" not in capsys.readouterr().out
+
 class TestOutputNames:
     """日時は秒までなので、同じ秒に続けて実行すると名前が重なる。前のファイルを消さない。"""
 

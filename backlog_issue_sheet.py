@@ -229,14 +229,21 @@ def print_plan(plan: Plan, master: Master) -> None:
             if attrs:
                 print(" " * 12 + " / ".join(attrs))
 
-    if plan.updates:
+    errors = error_rows(plan, UPDATE_SHEET)
+    listed = {u.row_no for u in plan.updates}
+    # 課題キーの誤り（空・形・存在しない・別プロジェクト・重複）で、どの課題か決まらない行は
+    # 一覧に載らない。見出しの件数だけでは、その行があることに気づけないため別に示す
+    unlisted = sorted(r for r in errors if r >= 2 and r not in listed)
+    if plan.updates or unlisted:
         changed = [u for u in plan.updates if u.has_changes]
-        errors = error_rows(plan, UPDATE_SHEET)
         note = error_note([u.row_no for u in plan.updates], errors)
         print(
             f"\n■ {UPDATE_SHEET}シート（更新 {len(changed)} 件 / "
             f"変更なし {len(plan.updates) - len(changed)} 件{note}）"
         )
+        if unlisted:
+            rows = "、".join(str(r) for r in unlisted)
+            print(f"✗ ほかに、課題キーの誤りで一覧に載らない行が {len(unlisted)} 行あります（{rows} 行目）")
         for up in plan.updates:
             mark = "" if up.has_changes else "  変更なし"
             print(f"{row_mark(up.row_no, errors)}{pad(f'{up.row_no}行目', 8)}{up.issue_key} {up.summary}{mark}")
