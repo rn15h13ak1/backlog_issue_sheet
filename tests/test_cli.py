@@ -149,7 +149,16 @@ class TestOtherCommands:
     def test_master(self, env, capsys):
         assert cli.main(["master"]) == cli.EXIT_OK
         out = capsys.readouterr().out
-        assert "山田太郎" in out and "区分  [単一リスト]" in out
+        assert "区分  [単一リスト]" in out
+        assert "山田太郎（yamada） / 佐藤花子（sato）" in out
+
+    def test_master_は同姓同名をログイン_ID_で見分けられるよう両方出す(self, env, fake, capsys, monkeypatch):
+        """同姓同名は名前では書けず、ログイン ID で書くしかない。その ID を確かめる場所が要る。"""
+        import conftest
+
+        monkeypatch.setattr(conftest, "USERS", conftest.USERS + [{"id": 12, "name": "山田太郎", "userId": "yamada2"}])
+        assert cli.main(["master"]) == cli.EXIT_OK
+        assert "山田太郎（yamada） / 佐藤花子（sato） / 山田太郎（yamada2）" in capsys.readouterr().out
 
 
 class TestReadWorkbook:

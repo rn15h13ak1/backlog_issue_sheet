@@ -15,7 +15,7 @@ from fields import (
     to_cell,
     to_param,
 )
-from master import Master
+from master import Master, NameTable
 
 COL = STANDARD_BY_HEADER
 
@@ -87,3 +87,15 @@ class TestToParam:
     def test_時間は余分な_0_を付けない(self):
         assert to_param(COL["予定時間"], 2.0) == "2"
         assert to_param(COL["予定時間"], 1.25) == "1.25"
+
+
+class TestNameTableLabels:
+    def test_ログイン_ID_が無いユーザーは名前だけ(self):
+        table = NameTable("ユーザー", [
+            {"id": 1, "name": "山田太郎", "userId": "yamada"},
+            {"id": 2, "name": "外部の人", "userId": None},
+        ], alt_key="userId")
+        assert table.labels() == ["山田太郎（yamada）", "外部の人"]
+
+    def test_ログイン_ID_を持たない表は名前のまま(self):
+        assert NameTable("種別", [{"id": 1, "name": "タスク"}]).labels() == ["タスク"]

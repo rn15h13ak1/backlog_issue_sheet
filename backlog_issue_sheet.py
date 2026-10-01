@@ -269,11 +269,11 @@ def cmd_master(args) -> int:
     _, _, _, master = connect(args)
     labels = [
         ("種別", "issue_types"), ("優先度", "priorities"), ("状態", "statuses"),
-        ("完了理由", "resolutions"), ("担当者", "users"), ("カテゴリー", "categories"),
+        ("完了理由", "resolutions"), ("担当者（括弧内はログイン ID）", "users"), ("カテゴリー", "categories"),
         ("発生バージョン / マイルストーン", "versions"),
     ]
     for label, key in labels:
-        names = master.table(key).names()
+        names = master.table(key).labels()
         print(f"\n{label}")
         print("  " + (" / ".join(names) if names else "（なし）"))
     print("\nカスタム属性（列の見出しにこの名前を書く）")

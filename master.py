@@ -86,6 +86,20 @@ class NameTable:
                 seen.append(name)
         return seen
 
+    def labels(self) -> list[str]:
+        """
+        一覧に表示する名前。ログイン ID があれば「名前（ID）」にする。
+
+        names() と違い重複をまとめない。同姓同名のユーザーは、ログイン ID で
+        書き分けるしかないため、両方を ID 付きで見せる。
+        """
+        labels = []
+        for item in self.items:
+            name = str(item.get("name", "")).strip()
+            alt = self._alt_of.get(item["id"])
+            labels.append(f"{name}（{alt}）" if alt else name)
+        return labels
+
     def has(self, name: str) -> bool:
         return name in self._by_name or name in self._by_alt
 
