@@ -611,6 +611,35 @@ def check_duplicates(plan: Plan, master: Master, client) -> None:
         plan.duplicate_rows.append(cp.row_no)
 
 
+def check_sheet_duplicates(plan: Plan) -> None:
+    """
+    同じシートの中で、親と件名が同じ行が 2 つ以上あれば注意を出す。
+
+    行をコピーして消し忘れた、といった書き間違いのことが多い。ただ、意図して
+    同じ件名の行を並べることもあるため、止めずに注意にとどめる。
+    親の比べ方は check_duplicates と同じ（親が違えば別の課題とみなす）。
+    """
+    first_row: dict[tuple, int] = {}
+    for cp in plan.creates:
+        if cp.parent_row is not None:
+            parent = ("row", cp.parent_row)
+            where = f"同じ親（{cp.parent_row}行目）の下に"
+        elif cp.parent_key:
+            parent = ("key", cp.parent_key)
+            where = f"同じ親（{cp.parent_key}）の下に"
+        else:
+            parent = ("none",)
+            where = "親の無い行に"
+        key = (parent, normalize_text(cp.summary))
+        if key not in first_row:
+            first_row[key] = cp.row_no
+            continue
+        plan.warnings.append(Problem(
+            REGISTER_SHEET, cp.row_no, "件名",
+            f"{where}、{first_row[key]}行目と同じ件名の行があります。どちらも作ります",
+        ))
+
+
 def build_plan(
     sheets: dict[str, SheetData], master: Master, client, *, allow_duplicates: bool = False,
 ) -> Plan:
@@ -619,6 +648,7 @@ def build_plan(
     issues = IssueCache(client, master.project_id)
     if REGISTER_SHEET in sheets:
         plan_register(sheets[REGISTER_SHEET], master, issues, plan)
+        check_sheet_duplicates(plan)
         if not allow_duplicates:
             check_duplicates(plan, master, client)
     if UPDATE_SHEET in sheets:

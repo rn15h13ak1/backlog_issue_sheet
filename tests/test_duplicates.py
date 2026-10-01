@@ -115,3 +115,46 @@ class TestCalls:
         fake.add("x")
         plan_with({"更新": (["課題キー", "件名"], [["DEMO-1", "y"]])})
         assert counted == []
+
+
+class TestInSheet:
+    """シートの中の重複は、書き間違いのことが多いが意図することもあるため、注意にとどめる。"""
+
+    def warnings(self, plan):
+        return [str(w) for w in plan.warnings if w.column == "件名"]
+
+    def test_同じ親の下に同じ件名の子が2行あれば注意(self, plan_with):
+        plan = plan_with(reg(row("帳票設計"), row("レビュー", child="○"), row("レビュー", child="○")))
+        assert plan.ok and len(plan.creates) == 3
+        assert self.warnings(plan) == [
+            "登録 4行目「件名」: 同じ親（2行目）の下に、3行目と同じ件名の行があります。どちらも作ります"
+        ]
+
+    def test_親の無い行どうしでも注意(self, plan_with):
+        plan = plan_with(reg(row("画面設計"), row(" 画面設計 ")))
+        assert self.warnings(plan) == [
+            "登録 3行目「件名」: 親の無い行に、2行目と同じ件名の行があります。どちらも作ります"
+        ]
+
+    def test_既存の親の下でも注意(self, plan_with, fake):
+        fake.add("親")
+        plan = plan_with(reg(row("レビュー", parent_key="DEMO-1"), row("レビュー", parent_key="DEMO-1")))
+        assert self.warnings(plan) == [
+            "登録 3行目「件名」: 同じ親（DEMO-1）の下に、2行目と同じ件名の行があります。どちらも作ります"
+        ]
+
+    def test_親が違えば注意しない(self, plan_with):
+        """「レビュー」のように、親ごとに同じ件名の子を作るのはよくある。"""
+        plan = plan_with(reg(
+            row("画面設計"), row("レビュー", child="○"),
+            row("帳票設計"), row("レビュー", child="○"),
+        ))
+        assert self.warnings(plan) == []
+
+    def test_3行あれば2行目以降のそれぞれに出す(self, plan_with):
+        plan = plan_with(reg(row("a"), row("a"), row("a")))
+        assert [w.row for w in plan.warnings if w.column == "件名"] == [3, 4]
+
+    def test_同じ件名の課題を許しても注意は出す(self, plan_with):
+        plan = plan_with(reg(row("a"), row("a")), allow_duplicates=True)
+        assert len(self.warnings(plan)) == 1
