@@ -3,7 +3,8 @@
 import pytest
 
 import backlog_issue_sheet as cli
-from sheet_io import SheetError, read_workbook
+import sheet_io
+from sheet_io import SheetError, read_workbook, unique_stamp
 
 CONFIG = """
 backlog:
@@ -187,3 +188,41 @@ class TestPlanDisplay:
         out = capsys.readouterr().out
         assert "└ 子（親: 2行目）" in out
         assert "状態=処理中（作成後に更新）" in out
+
+
+class TestOutputNames:
+    """日時は秒までなので、同じ秒に続けて実行すると名前が重なる。前のファイルを消さない。"""
+
+    @pytest.fixture
+    def same_second(self, monkeypatch):
+        monkeypatch.setattr(sheet_io, "timestamp", lambda now=None: "20261001_120000")
+
+    def test_重ならなければ日時のまま(self, tmp_path, same_second):
+        assert unique_stamp(tmp_path, ["a_{}.xlsx"]) == "20261001_120000"
+
+    def test_既にあれば番号を付ける(self, tmp_path, same_second):
+        (tmp_path / "a_20261001_120000.xlsx").touch()
+        (tmp_path / "a_20261001_120000_2.xlsx").touch()
+        assert unique_stamp(tmp_path, ["a_{}.xlsx"]) == "20261001_120000_3"
+
+    def test_対になるファイルは同じ番号にそろえる(self, tmp_path, same_second):
+        """結果のファイルだけが残っていても、実行ログと番号がずれないようにする。"""
+        (tmp_path / "結果_20261001_120000.xlsx").touch()
+        assert unique_stamp(tmp_path, ["run_{}.csv", "結果_{}.xlsx"]) == "20261001_120000_2"
+
+    def test_同じ秒に2回書き出しても両方残る(self, env, fake, same_second):
+        fake.add("x")
+        assert cli.main(["export"]) == cli.EXIT_OK
+        assert cli.main(["export"]) == cli.EXIT_OK
+        names = sorted(f.name for f in (env / "output").iterdir())
+        assert names == ["書き出し_20261001_120000.xlsx", "書き出し_20261001_120000_2.xlsx"]
+
+    def test_同じ秒に2回取り込んでも実行ログが両方残る(self, env, fake, make_book, same_second):
+        book = make_book({"登録": (REG, [[None, None, "a", "タスク", "中"]])})
+        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_OK
+        assert cli.main(["import", str(book), "--execute", "--yes"]) == cli.EXIT_OK
+        names = sorted(f.name for f in (env / "output").iterdir())
+        assert names == [
+            "run_20261001_120000.csv", "run_20261001_120000_2.csv",
+            "結果_20261001_120000.xlsx", "結果_20261001_120000_2.xlsx",
+        ]

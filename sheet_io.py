@@ -341,3 +341,19 @@ def build_workbook(
 
 def timestamp(now: dt.datetime | None = None) -> str:
     return (now or dt.datetime.now()).strftime("%Y%m%d_%H%M%S")
+
+
+def unique_stamp(directory: Path, names: list[str], now: dt.datetime | None = None) -> str:
+    """
+    ファイル名に使う日時。names（"run_{}.csv" のような形）のどれかが既にあれば、
+    _2, _3 … を付けて、どれとも重ならないものにする。
+
+    日時は秒までなので、同じ秒に続けて実行すると同じ名前になる。重なったまま
+    保存すると、前のファイル（どこまで反映したかを示す実行ログなど）が黙って消える。
+    実行ログと結果のように対になるファイルは、同じ番号にそろえる。
+    """
+    base = timestamp(now)
+    stamp, n = base, 2
+    while any((Path(directory) / name.format(stamp)).exists() for name in names):
+        stamp, n = f"{base}_{n}", n + 1
+    return stamp

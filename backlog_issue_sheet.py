@@ -40,7 +40,7 @@ from fields import (
 )
 from master import CF_TYPE_NAMES, Master
 from planner import Plan, build_plan
-from sheet_io import SheetError, read_workbook, timestamp, write_workbook
+from sheet_io import SheetError, read_workbook, unique_stamp, write_workbook
 
 TOOL_DIR = Path(__file__).resolve().parent
 # メニュー（menu.py）の「取り込み（実行）」の表示名。ドライランの案内に使う
@@ -145,6 +145,11 @@ def output_dir(config: dict, config_path: Path, override: str | None) -> Path:
         return Path(override)
     out = Path(config.get("output_dir") or "output")
     return out if out.is_absolute() else config_path.parent / out
+
+
+def stamped_path(out_dir: Path, name: str) -> Path:
+    """name の {} に日時を入れたパス。既にあるファイルとは重ならない。"""
+    return out_dir / name.format(unique_stamp(out_dir, [name]))
 
 
 def make_client(config: dict, api_key: str, debug: bool) -> BacklogClient:
@@ -253,7 +258,7 @@ def connect(args) -> tuple[dict, Path, BacklogClient, Master]:
 def cmd_template(args) -> int:
     config, config_path, _, master = connect(args)
     out_dir = output_dir(config, config_path, args.output_dir)
-    path = Path(args.output) if args.output else out_dir / f"課題シート_{timestamp()}.xlsx"
+    path = Path(args.output) if args.output else stamped_path(out_dir, "課題シート_{}.xlsx")
     write_workbook(path, master, include_guide=True)
     print(f"ひな形を作りました: {path}")
     print(f"  列: {len(all_columns(master))} 項目（うちカスタム属性 {len(master.custom_fields)}）")
@@ -317,7 +322,7 @@ def cmd_import(args) -> int:
         return EXIT_OK
 
     out_dir = output_dir(config, config_path, args.output_dir)
-    ts = timestamp()
+    ts = unique_stamp(out_dir, ["run_{}.csv", "結果_{}.xlsx"])
     log_path = out_dir / f"run_{ts}.csv"
     print()
     with executor.RunLog(log_path) as log:
@@ -344,7 +349,7 @@ def cmd_import(args) -> int:
 def cmd_export(args) -> int:
     config, config_path, client, master = connect(args)
     out_dir = output_dir(config, config_path, args.output_dir)
-    path = Path(args.output) if args.output else out_dir / f"書き出し_{timestamp()}.xlsx"
+    path = Path(args.output) if args.output else stamped_path(out_dir, "書き出し_{}.xlsx")
     flt = ExportFilter(
         statuses=args.status or [],
         types=args.type or [],
