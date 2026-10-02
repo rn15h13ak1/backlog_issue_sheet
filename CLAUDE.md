@@ -3,9 +3,10 @@
 共通規約は [`../ws-conventions/README.md`](../ws-conventions/README.md) に従う。
 本ファイルには、本リポジトリだけの事情を書く。
 
-commit / push は、修正ごとに行う。検査とテストを通してから commit し、そのまま
-push する。共通規約は「利用者が指示したときだけ」とするが、本リポジトリでは
-利用者が修正ごとに行うよう常設で指示したため。検査やテストが落ちたら commit しない。
+commit / push は、[規約 A](../ws-conventions/README.md#commit--push-の判断) のとおり、
+修正ごとに行う。検査とテストを通してから commit し、そのまま push する。
+検査やテストが落ちたら commit しない。2026-10-01 から逸脱として記録していたが、
+2026-10-02 の規約 A の改定で規約どおりになった。
 GitHub のリポジトリは公開している。ライセンスは MIT（`LICENSE`）。
 
 ## 作業のたびに実行する
